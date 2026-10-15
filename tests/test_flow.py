@@ -76,9 +76,9 @@ def test_confirm_renames_and_writes_bib(client):
 
     for q in ["vinogradov", "2000", "PV_2000", "lagrang", "geometric"]:
         assert "singular Lagrangians" in client.get("/", params={"q": q}).text, q
-    assert "No papers match" in client.get("/", params={"q": "hamiltonian"}).text
+    assert "No papers" in client.get("/", params={"q": "hamiltonian"}).text
     assert "singular" in client.get("/", params={"tag": "lagrangian"}).text
-    assert "No papers match" in client.get("/", params={"tag": ["lagrangian", "nope"]}).text
+    assert "No papers" in client.get("/", params={"tag": ["lagrangian", "nope"]}).text
     assert "PV_2000" in client.get("/export.bib", params={"tag": "lagrangian"}).text
 
     client.post("/papers/1/undo")
@@ -109,3 +109,20 @@ def test_inbox_scanned_automatically_and_duplicates_flagged(client):
     assert "scan_0042.pdf" in page and "copy.pdf" in page
     notes = [client.get(f"/staging/{i}").text for i in (1, 2)]
     assert any("Possible duplicate" in n for n in notes)
+
+
+def test_delete_trashes_unconfirmed_pdf(client):
+    client.post("/scan")
+    r = client.post("/staging/1/delete", follow_redirects=False)
+    assert r.status_code == 303
+    assert not (client.inbox / "scan_0042.pdf").exists()
+    assert "scan_0042.pdf" not in client.get("/staging").text
+
+
+def test_tag_editor_replaces_tags_and_normalizes(client):
+    client.post("/scan")
+    r = client.post("/papers/1/tags", data={"tags": "Lie Algebroids,  poisson poisson Géométrie"})
+    assert r.json()["tags"] == ["algebroids", "geometrie", "lie", "poisson"]
+    assert "poisson" in {t["name"] for t in r.json()["index"]}
+    r = client.post("/papers/1/tags", data={"tags": "poisson"})
+    assert r.json()["tags"] == ["poisson"]

@@ -7,7 +7,9 @@ confirmed paper can be rebuilt from them.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+import unicodedata
 from pathlib import Path
 
 SCHEMA = """
@@ -60,8 +62,16 @@ def color_for(name: str) -> str:
     return PALETTE[sum(map(ord, name)) % len(PALETTE)]
 
 
+def tag_name(text: str) -> str:
+    """Lowercase-kebab, ASCII: ``Lie Algebroids`` -> ``lie-algebroids``."""
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c)).lower().strip()
+    text = re.sub(r"[^a-z0-9-]", "", re.sub(r"[\s_]+", "-", text))
+    return re.sub(r"-+", "-", text).strip("-")
+
+
 def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
-    name = name.strip().lower().replace(" ", "-")
+    name = tag_name(name)
     row = conn.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()
     if row:
         return row["id"]
@@ -72,7 +82,7 @@ def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
 
 def set_paper_tags(conn: sqlite3.Connection, paper_id: int, names: list[str]) -> None:
     conn.execute("DELETE FROM paper_tags WHERE paper_id = ?", (paper_id,))
-    for name in {n.strip().lower().replace(" ", "-") for n in names if n.strip()}:
+    for name in {tag_name(n) for n in names} - {""}:
         conn.execute(
             "INSERT OR IGNORE INTO paper_tags VALUES (?, ?)", (paper_id, ensure_tag(conn, name))
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from urllib.parse import urlencode
@@ -16,6 +17,7 @@ from .auth import router as auth_router
 from .bibtex import ENTRY_TYPES, Entry, render
 from .config import get_settings
 from .extract import render_preview
+from .latex import to_unicode
 from .names import Author, build_filename, citation_key, parse_author, unique_key
 from .services import Library
 from .storage import make_storage
@@ -32,7 +34,9 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 setup_oauth()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.globals["auth_on"] = not settings.auth_disabled
+templates.env.globals["local"] = settings.storage == "local"
 templates.env.filters["qs"] = lambda d: urlencode(d, doseq=True)
+templates.env.filters["tex"] = to_unicode
 templates.env.filters["names"] = lambda authors: ", ".join(
     Author(**a).display for a in authors or [])
 
@@ -61,7 +65,12 @@ def process_in_background(lib: Library) -> None:
             _process_lock.release()
 
 
+def tag_index() -> list[dict]:
+    return [{"name": t["name"], "color": t["color"], "n": t["n"]} for t in db.all_tags(_conn)]
+
+
 def page(request: Request, name: str, **ctx) -> HTMLResponse:
+    ctx.setdefault("tag_index", tag_index())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -113,34 +122,40 @@ def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[
 def export_bib(q: str = "", tag: list[str] = Query(default=[]),
                lib: Library = Depends(get_library)):
     ids = [r["id"] for r in lib.search(q, tag or [])]
+    name = "export.bib" if q or tag else "library.bib"
     return PlainTextResponse(lib.bib_text(ids), headers={
-        "Content-Disposition": 'attachment; filename="export.bib"'})
+        "Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/library.bib")
 def master_bib(lib: Library = Depends(get_library)):
-    return PlainTextResponse(lib.bib_text())
+    return PlainTextResponse(lib.bib_text(), headers={
+        "Content-Disposition": 'attachment; filename="library.bib"'})
 
 
-@app.post("/papers/{paper_id}/tags", response_class=HTMLResponse)
+@app.post("/papers/{paper_id}/tags")
 async def edit_tags(request: Request, paper_id: int, lib: Library = Depends(get_library)):
+    """Replace a paper's tags with the space-separated list sent by the tag editor."""
     form = await request.form()
-    current = [t["name"] for t in db.paper_tags(_conn, paper_id)]
-    if add := str(form.get("add", "")).strip():
-        current.append(add)
-    if remove := str(form.get("remove", "")):
-        current = [t for t in current if t != remove]
-    db.set_paper_tags(_conn, paper_id, current)
+    lib.get(paper_id)
+    db.set_paper_tags(_conn, paper_id, tag_list(dict(form)))
     db.reindex(_conn, paper_id)
     _conn.commit()
-    return page(request, "partials/paper_tags.html", paper=lib.get(paper_id),
-                ptags=db.paper_tags(_conn, paper_id))
+    return {"tags": [t["name"] for t in db.paper_tags(_conn, paper_id)], "index": tag_index()}
 
 
 @app.post("/papers/{paper_id}/undo")
 def undo(paper_id: int, lib: Library = Depends(get_library)):
     lib.undo(paper_id)
     return RedirectResponse(f"/staging/{paper_id}", status_code=303)
+
+
+@app.post("/quit", response_class=HTMLResponse)
+def quit_app(_: Library = Depends(get_library)):
+    """Stop the background server started by start.bat."""
+    threading.Timer(0.5, os._exit, args=(0,)).start()
+    return HTMLResponse('<body style="font:14px system-ui;color:#64748b;padding:3rem">'
+                        "Research Library stopped. Open start.bat to run it again.</body>")
 
 
 # ---- tags ------------------------------------------------------------------
@@ -190,11 +205,13 @@ def scan(bg: BackgroundTasks, lib: Library = Depends(get_library)):
 @app.post("/upload")
 async def upload(files: list[UploadFile], bg: BackgroundTasks,
                  lib: Library = Depends(get_library)):
+    n = 0
     for f in files:
         if f.filename and f.filename.lower().endswith(".pdf"):
             lib.upload(f.filename, await f.read())
+            n += 1
     bg.add_task(process_in_background, lib)
-    return RedirectResponse("/staging?msg=Uploaded", status_code=303)
+    return RedirectResponse(f"/staging?msg=Added+{n}+PDF(s)", status_code=303)
 
 
 @app.get("/papers/{paper_id}/preview.png")
@@ -272,7 +289,7 @@ def rerun(paper_id: int, lib: Library = Depends(get_library)):
     return RedirectResponse(f"/staging/{paper_id}", status_code=303)
 
 
-@app.post("/staging/{paper_id}/skip")
-def skip(paper_id: int, lib: Library = Depends(get_library)):
-    lib.skip(paper_id)
+@app.post("/staging/{paper_id}/delete")
+def delete(paper_id: int, lib: Library = Depends(get_library)):
+    lib.delete(paper_id)
     return RedirectResponse("/staging", status_code=303)

@@ -16,6 +16,8 @@ import unicodedata
 
 from pydantic import BaseModel
 
+from .latex import to_plain
+
 FULL_NAME_LIMIT = 3
 MAX_FILENAME = 150
 
@@ -151,7 +153,7 @@ def authors_for_filename(authors: list[Author]) -> str:
 
 def build_filename(year: int | str | None, authors: list[Author], title: str) -> str:
     head = sanitize(f"{year or 'nd'}_{authors_for_filename(authors)}_")
-    title = sanitize(title) or "Untitled"
+    title = sanitize(to_plain(title)) or "Untitled"
     room = MAX_FILENAME - len(head) - len(".pdf")
     if len(title) > room:
         cut = title[:room]

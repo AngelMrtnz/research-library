@@ -1,9 +1,9 @@
-<p class="mb-3 text-sm text-slate-500">{{ papers | length }} paper{{ '' if papers | length == 1 else 's' }}</p>
+{% if papers %}<p class="mb-3 text-sm text-slate-500">{{ papers | length }} paper{{ '' if papers | length == 1 else 's' }}</p>{% endif %}
 <ul class="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-800">
   {% for paper, e, ptags in papers %}
   <li class="p-4">
     <div class="flex flex-wrap items-baseline gap-x-3">
-      <a href="/papers/{{ paper.id }}/file.pdf" target="_blank" class="font-medium hover:text-blue-600">{{ e.title }}</a>
+      <a href="/papers/{{ paper.id }}/file.pdf" target="_blank" class="font-medium hover:text-blue-600">{{ e.title | tex }}</a>
       <span class="text-sm text-slate-500">{{ e.year }}</span>
       <code class="ml-auto cursor-pointer rounded bg-slate-100 px-2 text-xs dark:bg-slate-700" title="Copy key"
             onclick="navigator.clipboard.writeText('{{ e.key }}')">{{ e.key }}</code>
@@ -11,7 +11,7 @@
     <div class="text-sm text-slate-600 dark:text-slate-300">{{ e.authors | names }}{% if e.journal %} · <i>{{ e.journal }}</i>{% endif %}</div>
     <div class="mt-1 truncate text-xs text-slate-400" title="{{ paper.filename }}">{{ paper.filename }}</div>
     <div class="mt-2 flex flex-wrap items-center gap-3">
-      <div id="tags-{{ paper.id }}">{% set ptags = ptags %}{% include "partials/paper_tags.html" %}</div>
+      <div data-tag-editor data-url="/papers/{{ paper.id }}/tags" data-tags='{{ ptags | map(attribute="name") | list | tojson }}'></div>
       <div class="ml-auto flex gap-3 text-xs">
         <button class="text-slate-500 hover:text-blue-600" onclick="navigator.clipboard.writeText(this.nextElementSibling.value)">Copy BibTeX</button>
         <textarea hidden>{{ paper.bibtex }}</textarea>
@@ -20,6 +20,6 @@
     </div>
   </li>
   {% else %}
-  <li class="p-8 text-center text-sm text-slate-500">No papers match. New PDFs show up under <a href="/staging" class="underline">Review</a> first.</li>
+  <li class="p-10 text-center text-sm text-slate-500">No papers</li>
   {% endfor %}
 </ul>

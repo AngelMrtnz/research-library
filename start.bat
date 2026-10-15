@@ -1,5 +1,5 @@
 @echo off
-rem Research Library: double-click to start. Close this window to stop.
+rem Research Library: double-click to start. It runs in the background; Quit in the app stops it.
 cd /d "%~dp0"
 where py >nul 2>nul
 if errorlevel 1 (
@@ -20,6 +20,4 @@ if errorlevel 1 (
 )
 if not exist config.env copy config.env.example config.env >nul
 .venv\Scripts\python -m app.check || (pause & exit /b 1)
-start "" http://localhost:8000/staging
-.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level warning
-pause
+start "" .venv\Scripts\pythonw.exe -m app.serve

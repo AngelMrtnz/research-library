@@ -1,18 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Review · Research Library{% endblock %}
 {% block content %}
-<div class="flex flex-col gap-4 sm:flex-row sm:items-end">
+<div class="flex flex-col gap-4 sm:flex-row sm:items-center">
   <div>
-    <h1 class="text-xl font-semibold">Staging / Review</h1>
-    <p class="text-sm text-slate-500">New PDFs in the Inbox appear here automatically. Nothing is renamed until you click <b>Confirm &amp; Rename</b>.</p>
+    <h1 class="text-xl font-semibold">Review</h1>
   </div>
-  <form method="post" action="/scan" class="sm:ml-auto">
-    <button class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900">Rescan inbox</button>
-  </form>
-  <form method="post" action="/upload" enctype="multipart/form-data" class="flex items-center gap-2">
-    <input type="file" name="files" accept="application/pdf" multiple required class="text-sm">
-    <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Upload</button>
-  </form>
+  <label class="sm:ml-auto inline-flex shrink-0 self-start whitespace-nowrap sm:self-auto cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-500">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>Add PDFs
+    <input type="file" accept="application/pdf" multiple class="hidden" onchange="uploadPdfs(this.files)">
+  </label>
 </div>
 <div id="rows" class="mt-6">{% include "partials/staging_rows.html" %}</div>
 {% endblock %}

@@ -2,7 +2,8 @@
 
 Files are always addressed by a stable id, never by name, so renames are safe.
 Nothing here is called during ingestion except list/download; renames and the
-library.bib upload happen only from the confirm handler.
+library.bib upload happen only from the confirm handler, and trash only from
+the Delete button on a paper that is not confirmed.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ class Storage(Protocol):
     def rename(self, file_id: str, new_name: str, to_library: bool) -> None: ...
     def write_bib(self, text: str) -> None: ...
     def save_upload(self, name: str, data: bytes) -> StoredFile: ...
+    def trash(self, file_id: str) -> None: ...
     def view_url(self, file_id: str) -> str | None: ...
 
 
@@ -91,6 +93,12 @@ class LocalStorage:
             n += 1
         path.write_bytes(data)
         return self._register(path)
+
+    def trash(self, file_id: str) -> None:
+        # In the Drive for Desktop folder this lands in Google Drive's trash.
+        self._path(file_id).unlink(missing_ok=True)
+        del self.index[file_id]
+        self._save()
 
     def view_url(self, file_id: str) -> str | None:
         return None
@@ -177,6 +185,10 @@ class DriveStorage:
             media_body=media, fields="id, name", supportsAllDrives=True,
         ).execute()
         return StoredFile(f["id"], f["name"])
+
+    def trash(self, file_id: str) -> None:
+        self.svc.files().update(fileId=file_id, body={"trashed": True},
+                                supportsAllDrives=True).execute()
 
     def view_url(self, file_id: str) -> str | None:
         return f"https://drive.google.com/file/d/{file_id}/view"

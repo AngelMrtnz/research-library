@@ -141,3 +141,16 @@ def test_filenames_are_ascii():
     name = build_filename(2021, authors, "Lie–Poisson “brackets” on Æ-manifolds: ∞-jets")
     assert name == "2021_Grossmann-Odegard_Lie-Poisson brackets on AE-manifolds - -jets.pdf"
     assert name.isascii()
+
+
+def test_latex_title_kept_in_bibtex_shown_as_unicode_flattened_in_filename():
+    from app.latex import to_unicode
+
+    title = r"Lie algebroids on $\mathbb{R}^n$ & $\mathfrak{g}$-manifolds"
+    e = Entry(key="X_2020", title=title, year=2020,
+              authors=[parse_author("Manuel de León")])
+    assert r"title = {{Lie algebroids on $\mathbb{R}^n$ \& $\mathfrak{g}$-manifolds}}" in render(e)
+    assert "author = {Manuel de León}" in render(e)
+    assert to_unicode(title) == "Lie algebroids on ℝⁿ & g-manifolds"
+    assert build_filename(2020, e.authors, title) == \
+        "2020_de Leon_Lie algebroids on Rn & g-manifolds.pdf"

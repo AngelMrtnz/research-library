@@ -23,7 +23,7 @@ One letter per surname in printed order, a particle adds its lowercase initials 
 
 ## BibTeX (see docs/bibtex-style.md)
 - `author`: full `Given Surname` names joined by ` and `.
-- `title = {{…}}`; article `volume = {{\bf 35}}`; `pages = {35-55}`.
+- `title = {{…}}` with math in LaTeX (`$\mathfrak{g}$`), accents as UTF-8, never flattened to ASCII; article `volume = {{\bf 35}}`; `pages = {35-55}`.
 - DOI → `note = {\href{https://doi.org/DOI}{DOI}}`; arXiv → `note = {\href{https://arxiv.org/abs/ID}{ID}}` with `journal = {Preprint}`; in preparation → `note = {(in preparation)}`.
 
 ## Review

@@ -21,7 +21,10 @@ class Extraction(BaseModel):
                             "techreport or misc")
     title: str = Field(description="The paper's own title only: no journal name, volume, "
                        "'Original Article', DOI or trailing period. Keep its capitalization; "
-                       "convert ALL CAPS titles to normal case.")
+                       "convert ALL CAPS titles to normal case. Write accented letters as "
+                       "normal Unicode characters (León), and math or symbols in LaTeX "
+                       "between $...$ exactly as printed, e.g. $\\mathbb{R}^n$, "
+                       "$\\mathfrak{g}$, $\\alpha$-Lie; never flatten them to plain ASCII.")
     authors: list[Author] = Field(description="All authors in the order printed. given = "
                                   "given names as printed, particle = lowercase surname "
                                   "particle such as 'de', 'van der', family = surname. "
@@ -47,7 +50,9 @@ class Extraction(BaseModel):
 
 
 PROMPT = """You catalogue academic papers for a personal library (mostly mathematics and
-mathematical physics). From the attached first pages, extract citation metadata.
+mathematical physics). From the attached first page, extract citation metadata.
+Read the page itself (it may be a scan or a photo): the text layer below can be empty,
+garbled or missing symbols, so trust what you see on the page over it.
 Rules:
 - Authors exactly in the order printed. Never reorder.
 - Never invent fields. Leave a field empty when it is not on the page.
@@ -110,7 +115,7 @@ def heuristic(pdf: bytes, existing_tags: list[str]) -> Extraction:
         entry_type="unpublished" if "arxiv" in ids else "article",
         title=title, authors=authors,
         year=int(years.most_common(1)[0][0]) if years else None,
-        notes="Extracted without AI (no Gemini key): check every field.",
+        notes="No Gemini key: check every field.",
         **ids,
     )
 
@@ -122,7 +127,7 @@ def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> E
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
         retry_options=types.HttpRetryOptions(attempts=2)))
     prompt = PROMPT.format(tags=", ".join(existing_tags) or "(none yet)",
-                           text=page_text(pdf, 1)[:6000])
+                           text=page_text(pdf, 1).strip()[:6000] or "(none: scanned page)")
     contents = [types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
                 prompt]
     config = types.GenerateContentConfig(
