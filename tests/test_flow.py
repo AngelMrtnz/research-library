@@ -192,7 +192,8 @@ def test_online_lookup_only_for_articles_and_preprints(client, monkeypatch):
 def test_delete_all_in_review(client):
     import shutil
     shutil.copy(client.inbox / "scan_0042.pdf", client.inbox / "copy.pdf")
-    assert "Delete all" in client.get("/staging").text
+    page = client.get("/staging").text
+    assert "Delete all" in page and "Refresh" in page
     r = client.post("/staging/delete-all", follow_redirects=False)
     assert r.status_code == 303 and "Deleted+2" in r.headers["location"]
     assert not list(client.inbox.glob("*.pdf"))
