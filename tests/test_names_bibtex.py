@@ -162,3 +162,53 @@ def test_math_in_filenames_keeps_its_meaning():
     assert to_plain(r"$L_\infty$-algebras") == "L-infinity-algebras"
     assert to_plain(r"Homotopy $L_{\infty}$ structures") == "Homotopy L-infinity structures"
     assert to_plain(r"$\infty$-jets and $\alpha$-x") == "infinity-jets and alpha-x"
+
+
+def _quota(per: str = "Minute"):
+    from google.genai import errors
+
+    return errors.APIError(429, {"error": {
+        "code": 429, "status": "RESOURCE_EXHAUSTED",
+        "message": "Quota exceeded. Please retry in 2.5s.",
+        "details": [{"violations": [{"quotaId": f"GenerateRequestsPer{per}PerProjectPerModel"}]}],
+    }})
+
+
+def _fake_client(monkeypatch, outcomes):
+    from types import SimpleNamespace
+
+    from app import extract
+
+    calls = []
+
+    def generate_content(model, contents, config):
+        calls.append(model)
+        out = outcomes.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return SimpleNamespace(parsed=out, text="")
+    monkeypatch.setattr(extract, "_client", lambda key: SimpleNamespace(
+        models=SimpleNamespace(generate_content=generate_content)))
+    slept = []
+    monkeypatch.setattr(extract.time, "sleep", slept.append)
+    return calls, slept
+
+
+def test_gemini_waits_when_every_model_is_over_the_minute_limit(monkeypatch):
+    from app import extract
+
+    ok = extract.Venue(kind="journal")
+    calls, slept = _fake_client(monkeypatch, [_quota(), _quota(), ok])
+    assert extract.check_venue("X", "key", "a,b") is ok
+    assert calls == ["a", "b", "a"] and slept == [3.5]
+
+
+def test_gemini_daily_limit_gives_a_clear_error(monkeypatch):
+    import pytest
+
+    from app import extract
+
+    calls, slept = _fake_client(monkeypatch, [_quota("Day"), _quota("Day")])
+    with pytest.raises(extract.QuotaError, match="today's free requests"):
+        extract.check_venue("X", "key", "a,b")
+    assert not slept

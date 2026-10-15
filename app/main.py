@@ -243,6 +243,7 @@ async def update_tag(request: Request, tag_id: int, lib: Library = Depends(get_l
 def staging_page(request: Request, bg: BackgroundTasks, msg: str = "",
                  lib: Library = Depends(get_library)):
     if not request.headers.get("HX-Request"):
+        lib.retry_quota_errors()
         lib.scan()
         bg.add_task(process_in_background, lib)  # also picks up anything left pending
     rows = _conn.execute(

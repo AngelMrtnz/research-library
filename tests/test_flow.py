@@ -226,3 +226,12 @@ def test_gemini_reads_more_pages_only_when_needed(monkeypatch, tmp_path):
                                               authors=[extract.parse_author("A B")]))
     extract.gemini(pdf, [], "key", "m")
     assert asked == [1]
+
+
+def test_refresh_retries_papers_that_hit_the_gemini_limit(client):
+    import app.main as main
+    client.post("/scan")
+    main._conn.execute("UPDATE papers SET status = 'error', error = '429 RESOURCE_EXHAUSTED.'")
+    main._conn.commit()
+    client.get("/staging")
+    assert main._conn.execute("SELECT status FROM papers").fetchone()[0] != "error"

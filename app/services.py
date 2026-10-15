@@ -18,7 +18,7 @@ from pathlib import Path
 from . import db
 from .bibtex import Entry, render, render_library
 from .config import Settings
-from .extract import Extraction, Venue, check_venue, extract
+from .extract import QUOTA_ERROR, Extraction, Venue, check_venue, extract
 from .lookup import published_version
 from .names import ascii_fold, build_filename, citation_key, dedupe_filename, unique_key
 from .storage import Storage
@@ -142,6 +142,14 @@ class Library:
             )
             self.conn.commit()
         return cur.rowcount == 1
+
+    def retry_quota_errors(self) -> None:
+        """Papers that failed only because Gemini's limit was hit get read again."""
+        with self.lock:
+            self.conn.execute("UPDATE papers SET status = 'pending', error = NULL "
+                              "WHERE status = 'error' AND (error LIKE ? OR error LIKE '429 %')",
+                              (QUOTA_ERROR + "%",))
+            self.conn.commit()
 
     def scan(self) -> int:
         return sum(self.register(f.id, f.name) for f in self.storage.list_new_pdfs())

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from collections import Counter
 from functools import lru_cache
 
@@ -10,6 +12,8 @@ import pymupdf
 from pydantic import BaseModel, Field
 
 from .names import Author, parse_author
+
+log = logging.getLogger(__name__)
 
 DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+[^\s\"<>.,;)\]])", re.I)
 ARXIV_RE = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5})(v\d+)?", re.I)
@@ -147,8 +151,31 @@ def _client(api_key: str):
         timeout=90_000, retry_options=types.HttpRetryOptions(attempts=2)))
 
 
+QUOTA_ERROR = "Gemini limit reached"
+# How long to keep waiting for the free per-minute limit before giving up on a paper.
+MAX_WAIT = 150
+
+
+class QuotaError(RuntimeError):
+    pass
+
+
+def _retry_after(exc: Exception) -> float:
+    """Seconds Gemini asks us to wait ("retry in 36.5s" / retryDelay '36s')."""
+    m = re.search(r"retry in ([\d.]+)s|retryDelay'?:\s*'(\d+)s", str(exc))
+    return min(float(m.group(1) or m.group(2)) + 1, 60) if m else 30
+
+
+def _daily(exc: Exception) -> bool:
+    return "PerDay" in str(exc)
+
+
 def _generate(api_key: str, models: str, contents: list, schema: type[BaseModel]) -> BaseModel:
-    """One structured Gemini call, falling back through the model list."""
+    """One structured Gemini call, falling back through the model list.
+
+    When every model is busy or over its per-minute limit, wait as long as Gemini asks
+    and try again, up to MAX_WAIT seconds in total.
+    """
     from google.genai import errors, types
 
     client = _client(api_key)
@@ -156,15 +183,36 @@ def _generate(api_key: str, models: str, contents: list, schema: type[BaseModel]
         response_mime_type="application/json", response_schema=schema, temperature=0.1,
     )
     names = [m.strip() for m in models.split(",") if m.strip()]
-    for i, model in enumerate(names):
-        try:
-            resp = client.models.generate_content(model=model, contents=contents, config=config)
-            break
-        except errors.APIError as exc:
-            # Busy (429/503) or retired (404) models fall through to the next one.
-            if exc.code not in (404, 429, 500, 503) or i == len(names) - 1:
-                raise
-    return resp.parsed or schema.model_validate_json(resp.text)
+    waited = 0.0
+    while True:
+        waits, daily = [], 0
+        for model in names:
+            try:
+                resp = client.models.generate_content(model=model, contents=contents,
+                                                      config=config)
+                return resp.parsed or schema.model_validate_json(resp.text)
+            except errors.APIError as exc:
+                # Busy (429/503) or retired (404) models fall through to the next one.
+                if exc.code not in (404, 429, 500, 503):
+                    raise
+                last = exc
+                if exc.code == 429 and _daily(exc):
+                    daily += 1
+                elif exc.code != 404:
+                    waits.append(_retry_after(exc) if exc.code == 429 else 10)
+        if waits and waited + min(waits) <= MAX_WAIT:
+            delay = min(waits)
+            log.info("Gemini busy, waiting %.0fs", delay)
+            time.sleep(delay)
+            waited += delay
+            continue
+        if daily and not waits:
+            raise QuotaError(f"{QUOTA_ERROR}: today's free requests are used up (they reset "
+                             "overnight, at midnight California time). Click Refresh then.")
+        if last.code == 429:
+            raise QuotaError(f"{QUOTA_ERROR}: the free plan allows only a few papers per "
+                             "minute. Click Refresh in a minute to try again.")
+        raise last
 
 
 # Read page one first (fast); read this many when page one is not enough.
