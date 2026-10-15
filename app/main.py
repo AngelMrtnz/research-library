@@ -5,7 +5,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -253,10 +253,13 @@ def preview(paper_id: int, lib: Library = Depends(get_library)):
 
 
 @app.get("/papers/{paper_id}/file.pdf")
-def pdf(paper_id: int, lib: Library = Depends(get_library)):
+@app.get("/papers/{paper_id}/pdf/{name}")
+def pdf(paper_id: int, name: str = "", lib: Library = Depends(get_library)):
+    """The PDF, shown and saved under its own filename."""
     row = lib.get(paper_id)
+    disposition = f"inline; filename*=UTF-8''{quote(row['filename'])}"
     return Response(lib.pdf_bytes(row["file_id"]), media_type="application/pdf",
-                    headers={"Content-Disposition": "inline"})
+                    headers={"Content-Disposition": disposition})
 
 
 def review_ctx(lib: Library, paper_id: int, error: str = "") -> dict:

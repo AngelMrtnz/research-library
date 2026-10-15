@@ -3,7 +3,7 @@
   {% for paper, e, ptags in papers %}
   <li class="p-4">
     <div class="flex flex-wrap items-baseline gap-x-3">
-      <a href="/papers/{{ paper.id }}/file.pdf?v={{ paper.file_id }}" target="_blank" class="font-medium hover:text-blue-600">{{ e.title | tex }}</a>
+      <a href="/papers/{{ paper.id }}/pdf/{{ paper.filename | urlencode }}?v={{ paper.file_id }}" target="_blank" class="font-medium hover:text-blue-600">{{ e.title | tex }}</a>
       <span class="text-sm text-slate-500">{{ e.year }}</span>
       <code class="ml-auto cursor-pointer rounded bg-slate-100 px-2 text-xs dark:bg-slate-700" title="Copy key"
             onclick="navigator.clipboard.writeText('{{ e.key }}')">{{ e.key }}</code>
