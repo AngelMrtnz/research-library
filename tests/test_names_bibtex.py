@@ -154,3 +154,11 @@ def test_latex_title_kept_in_bibtex_shown_as_unicode_flattened_in_filename():
     assert to_unicode(title) == "Lie algebroids on ℝⁿ & g-manifolds"
     assert build_filename(2020, e.authors, title) == \
         "2020_de Leon_Lie algebroids on Rn & g-manifolds.pdf"
+
+
+def test_math_in_filenames_keeps_its_meaning():
+    from app.latex import to_plain
+
+    assert to_plain(r"$L_\infty$-algebras") == "L-infinity-algebras"
+    assert to_plain(r"Homotopy $L_{\infty}$ structures") == "Homotopy L-infinity structures"
+    assert to_plain(r"$\infty$-jets and $\alpha$-x") == "infinity-jets and alpha-x"

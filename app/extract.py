@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from functools import lru_cache
 
 import pymupdf
 from pydantic import BaseModel, Field
@@ -127,13 +128,21 @@ def heuristic(pdf: bytes, existing_tags: list[str]) -> Extraction:
     )
 
 
+@lru_cache(maxsize=2)
+def _client(api_key: str):
+    """One Gemini client per key, reused across calls and threads."""
+    from google import genai
+    from google.genai import types
+
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(
+        timeout=90_000, retry_options=types.HttpRetryOptions(attempts=2)))
+
+
 def _generate(api_key: str, models: str, contents: list, schema: type[BaseModel]) -> BaseModel:
     """One structured Gemini call, falling back through the model list."""
-    from google import genai
     from google.genai import errors, types
 
-    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
-        timeout=90_000, retry_options=types.HttpRetryOptions(attempts=2)))
+    client = _client(api_key)
     config = types.GenerateContentConfig(
         response_mime_type="application/json", response_schema=schema, temperature=0.1,
     )

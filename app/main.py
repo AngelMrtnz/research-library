@@ -8,7 +8,13 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -114,17 +120,31 @@ def tag_list(data: dict) -> list[str]:
 
 
 # ---- library ---------------------------------------------------------------
+PAGE_SIZE = 50
+
+
 @app.get("/", response_class=HTMLResponse)
 def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[]),
-                 lib: Library = Depends(get_library)):
+                 offset: int = 0, lib: Library = Depends(get_library)):
     tags = tag or []
-    rows = lib.search(q, tags)
-    ctx = dict(q=q, active=tags, papers=[(r, entry_dict(r), db.paper_tags(_conn, r["id"]))
-                                         for r in rows],
-               tags=db.all_tags(_conn), export_qs=urlencode({"q": q, "tag": tags}, doseq=True))
+    rows = lib.search(q, tags, limit=PAGE_SIZE, offset=offset)
+    total = lib.count(q, tags) if offset == 0 else 0
+    more = offset + PAGE_SIZE
+    ctx = dict(q=q, active=tags, total=total,
+               papers=[(r, entry_dict(r), db.paper_tags(_conn, r["id"])) for r in rows],
+               more_qs=urlencode({"q": q, "tag": tags, "offset": more}, doseq=True)
+               if len(rows) == PAGE_SIZE else "",
+               export_qs=urlencode({"q": q, "tag": tags}, doseq=True))
+    if offset:  # "Show more": just the next rows
+        return page(request, "partials/rows.html", **ctx)
     if request.headers.get("HX-Request") and request.headers.get("HX-Target") == "results":
         return page(request, "partials/results.html", **ctx)
-    return page(request, "library.html", **ctx)
+    return page(request, "library.html", tags=db.all_tags(_conn), **ctx)
+
+
+@app.get("/papers/{paper_id}/bibtex")
+def paper_bibtex(paper_id: int, lib: Library = Depends(get_library)):
+    return PlainTextResponse(lib.get(paper_id)["bibtex"] or "")
 
 
 @app.get("/export.bib")
@@ -147,9 +167,10 @@ async def edit_tags(request: Request, paper_id: int, lib: Library = Depends(get_
     """Replace a paper's tags with the space-separated list sent by the tag editor."""
     form = await request.form()
     lib.get(paper_id)
-    db.set_paper_tags(_conn, paper_id, tag_list(dict(form)))
-    db.reindex(_conn, paper_id)
-    _conn.commit()
+    with lib.lock:
+        db.set_paper_tags(_conn, paper_id, tag_list(dict(form)))
+        db.reindex(_conn, paper_id)
+        _conn.commit()
     return {"tags": [t["name"] for t in db.paper_tags(_conn, paper_id)], "index": tag_index()}
 
 
@@ -174,6 +195,18 @@ async def mark_seen(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def same_site_only(request: Request, call_next):
+    """Refuse form posts from other websites (the app has no login on the PC)."""
+    if request.method == "POST":
+        site = request.headers.get("sec-fetch-site", "")
+        origin = request.headers.get("origin", "")
+        own = f"{request.url.scheme}://{request.url.netloc}"
+        if site in ("cross-site", "same-site") or (origin and origin != own):
+            return PlainTextResponse("Blocked: request from another site.", status_code=403)
+    return await call_next(request)
+
+
 @app.get("/ping")
 def ping():
     return Response(status_code=204)
@@ -190,17 +223,18 @@ def tags_page(request: Request, _: Library = Depends(get_library)):
 
 
 @app.post("/tags/{tag_id}")
-async def update_tag(request: Request, tag_id: int, _: Library = Depends(get_library)):
+async def update_tag(request: Request, tag_id: int, lib: Library = Depends(get_library)):
     form = await request.form()
-    if form.get("delete"):
-        affected = [r[0] for r in _conn.execute(
-            "SELECT paper_id FROM paper_tags WHERE tag_id = ?", (tag_id,))]
-        _conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
-        for pid in affected:
-            db.reindex(_conn, pid)
-    elif form.get("color") in db.PALETTE:
-        _conn.execute("UPDATE tags SET color = ? WHERE id = ?", (form["color"], tag_id))
-    _conn.commit()
+    with lib.lock:
+        if form.get("delete"):
+            affected = [r[0] for r in _conn.execute(
+                "SELECT paper_id FROM paper_tags WHERE tag_id = ?", (tag_id,))]
+            _conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+            for pid in affected:
+                db.reindex(_conn, pid)
+        elif form.get("color") in db.PALETTE:
+            _conn.execute("UPDATE tags SET color = ? WHERE id = ?", (form["color"], tag_id))
+        _conn.commit()
     return RedirectResponse("/tags", status_code=303)
 
 
@@ -258,8 +292,8 @@ def pdf(paper_id: int, name: str = "", lib: Library = Depends(get_library)):
     """The PDF, shown and saved under its own filename."""
     row = lib.get(paper_id)
     disposition = f"inline; filename*=UTF-8''{quote(row['filename'])}"
-    return Response(lib.pdf_bytes(row["file_id"]), media_type="application/pdf",
-                    headers={"Content-Disposition": disposition})
+    return FileResponse(lib.pdf_path(row["file_id"]), media_type="application/pdf",
+                        headers={"Content-Disposition": disposition})
 
 
 def review_ctx(lib: Library, paper_id: int, error: str = "") -> dict:

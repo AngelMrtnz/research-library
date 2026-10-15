@@ -108,6 +108,7 @@ SQLite (+ FTS5) ◄────────────────────�
 - [x] Visual pass: no emojis, active nav state, sentence-case labels, fewer words (Billy)
 - [x] Tag editor rebuilt (Library rows and review form): suggestions, keyboard, saves instantly, consistent kebab-case names
 - [x] start.bat runs the server in the background (pythonw, no console); Quit in the nav stops it
+- [x] Health check fixes (Oct 15): posts from other websites refused; PDFs read in place (no copies in `data/cache`, stale cache cleaned); Delete moves the PDF to `Papers/_Deleted`; online lookup only for articles, preprints and misc; one lock around database writes; Library shows 50 papers at a time with "Show more" and fetches BibTeX on Copy (2,000 papers: 275 ms / 3.4 MB to 39 ms / 81 KB); one Gemini client reused, venue check skipped when Crossref gives the short name; `$L_\infty$` becomes `L-infinity` in filenames; files moved in Explorer are found again by name; 26 tests
 
 ## Guiding principle
 Minimal, easy and fast to run (Billy). Prefer fewer dependencies, fewer clicks, fewer visible fields.

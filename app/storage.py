@@ -2,12 +2,12 @@
 
 Files are always addressed by a stable id, never by name, so renames are safe.
 Nothing here is called during ingestion except list/download; renames and the
-library.bib upload happen only from the confirm handler, and trash only from
-the Delete button on a paper that is not confirmed.
+library.bib upload happen only from Confirm / Undo, and trash only from Delete.
 """
 
 from __future__ import annotations
 
+import glob
 import io
 import json
 import uuid
@@ -18,6 +18,7 @@ from typing import Protocol
 from .config import Settings
 
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
+DELETED = "_Deleted"
 
 
 @dataclass
@@ -35,6 +36,7 @@ class Storage(Protocol):
     def save_upload(self, name: str, data: bytes) -> StoredFile: ...
     def trash(self, file_id: str) -> None: ...
     def view_url(self, file_id: str) -> str | None: ...
+    def local_path(self, file_id: str) -> Path | None: ...
 
 
 class LocalStorage:
@@ -53,7 +55,21 @@ class LocalStorage:
         self.index_path.write_text(json.dumps(self.index, indent=1))
 
     def _path(self, file_id: str) -> Path:
-        return Path(self.index[file_id])
+        path = Path(self.index[file_id])
+        if not path.exists():
+            # Moved in Explorer: find it by name in the library folders.
+            hits = (p for d in (self.library, self.inbox)
+                    for p in d.rglob(glob.escape(path.name)) if p.parent.name != DELETED)
+            found = next(hits, None)
+            if found is None:
+                raise FileNotFoundError(f"{path.name} is no longer in {self.library}")
+            self.index[file_id] = str(found)
+            self._save()
+            path = found
+        return path
+
+    def local_path(self, file_id: str) -> Path:
+        return self._path(file_id)
 
     def _register(self, path: Path) -> StoredFile:
         known = {v: k for k, v in self.index.items()}
@@ -95,9 +111,21 @@ class LocalStorage:
         return self._register(path)
 
     def trash(self, file_id: str) -> None:
-        # In the Drive for Desktop folder this lands in Google Drive's trash.
-        self._path(file_id).unlink(missing_ok=True)
-        del self.index[file_id]
+        """Move the PDF to ``Papers/_Deleted``: recoverable, and out of the app's sight."""
+        try:
+            src = self._path(file_id)
+        except FileNotFoundError:
+            src = None
+        if src is not None:
+            folder = self.library / DELETED
+            folder.mkdir(exist_ok=True)
+            dest = folder / src.name
+            n = 2
+            while dest.exists():
+                dest = folder / f"{src.stem} ({n}){src.suffix}"
+                n += 1
+            src.rename(dest)
+        self.index.pop(file_id, None)
         self._save()
 
     def view_url(self, file_id: str) -> str | None:
@@ -192,6 +220,9 @@ class DriveStorage:
 
     def view_url(self, file_id: str) -> str | None:
         return f"https://drive.google.com/file/d/{file_id}/view"
+
+    def local_path(self, file_id: str) -> Path | None:
+        return None
 
 
 def make_storage(settings: Settings) -> Storage:

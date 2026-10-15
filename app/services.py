@@ -1,7 +1,7 @@
 """Ingestion, review and confirmation.
 
 The one rule that matters: files are renamed and library.bib is written only in
-``confirm`` (and ``undo``), which run only when the owner clicks a button.
+``confirm``, ``undo`` and ``delete``, which run only when the owner clicks a button.
 """
 
 from __future__ import annotations
@@ -26,22 +26,34 @@ from .storage import Storage
 log = logging.getLogger(__name__)
 
 
-def add_published_version(x: Extraction) -> None:
-    """Fill journal, volume, pages and DOI from arXiv/Crossref when a published version exists."""
+LOOKUP_TYPES = ("unpublished", "article", "misc")
+
+
+def add_published_version(x: Extraction) -> bool:
+    """Fill journal, volume, pages and DOI from arXiv/Crossref when a published version exists.
+
+    Returns True when the journal name came back already abbreviated.
+    """
     found = published_version(x.title, x.authors[0].family if x.authors else "", x.doi, x.arxiv)
     if not found:
-        return
+        return False
+    abbreviated = found.pop("abbreviated", False)
     for k, v in found.items():
         setattr(x, k, v)
     ref = " ".join(str(found[k]) for k in ("journal", "volume") if found.get(k))
     x.notes = (f"Published version found online: {ref} ({found.get('year', '')}). "
                "Check it. " + x.notes).strip()
+    return abbreviated
 
 
 class Library:
     def __init__(self, conn: sqlite3.Connection, storage: Storage, settings: Settings):
         self.conn, self.storage, self.settings = conn, storage, settings
         settings.cache_dir.mkdir(parents=True, exist_ok=True)
+        # One connection is shared by page requests and the extraction threads:
+        # every write (and its commit) happens under this lock.
+        self.lock = threading.RLock()
+        self._clean_cache()
         self._venues_path = settings.data_dir / "venues.json"
         self._venues_lock = threading.Lock()
 
@@ -84,11 +96,29 @@ class Library:
                        + x.notes).strip()
 
     # ---- files -------------------------------------------------------------
-    def pdf_bytes(self, file_id: str) -> bytes:
+    def pdf_path(self, file_id: str) -> Path:
+        """The PDF on disk: the file itself locally, a cached download for Drive."""
+        if (local := self.storage.local_path(file_id)) is not None:
+            return local
         path: Path = self.settings.cache_dir / f"{file_id}.pdf"
         if not path.exists():
             path.write_bytes(self.storage.download(file_id))
-        return path.read_bytes()
+        return path
+
+    def pdf_bytes(self, file_id: str) -> bytes:
+        return self.pdf_path(file_id).read_bytes()
+
+    def _clean_cache(self) -> None:
+        """Drop cached previews and downloads of papers that no longer exist."""
+        known = {r[0] for r in self.conn.execute("SELECT file_id FROM papers")}
+        local = self.settings.storage == "local"
+        for f in self.settings.cache_dir.iterdir():
+            if f.is_file() and f.stem not in known or (local and f.suffix == ".pdf"):
+                f.unlink(missing_ok=True)
+
+    def _forget_cache(self, file_id: str) -> None:
+        for ext in (".pdf", ".png"):
+            (self.settings.cache_dir / f"{file_id}{ext}").unlink(missing_ok=True)
 
     def get(self, paper_id: int) -> sqlite3.Row:
         row = self.conn.execute("SELECT * FROM papers WHERE id = ?", (paper_id,)).fetchone()
@@ -105,11 +135,12 @@ class Library:
 
     # ---- ingestion (read-only on storage) ---------------------------------
     def register(self, file_id: str, name: str) -> bool:
-        cur = self.conn.execute(
-            "INSERT OR IGNORE INTO papers (file_id, original_filename, filename) "
-            "VALUES (?, ?, ?)", (file_id, name, name),
-        )
-        self.conn.commit()
+        with self.lock:
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO papers (file_id, original_filename, filename) "
+                "VALUES (?, ?, ?)", (file_id, name, name),
+            )
+            self.conn.commit()
         return cur.rowcount == 1
 
     def scan(self) -> int:
@@ -141,9 +172,11 @@ class Library:
         try:
             x = extract(self.pdf_bytes(row["file_id"]), tags,
                         self.settings.gemini_api_key, self.settings.gemini_model)
-            if self.settings.online_lookup and (not x.journal or x.entry_type == "unpublished"):
-                add_published_version(x)
-            if x.journal and self.settings.gemini_api_key:
+            abbreviated = False
+            if (self.settings.online_lookup and x.entry_type in LOOKUP_TYPES
+                    and (not x.journal or x.entry_type == "unpublished")):
+                abbreviated = add_published_version(x)
+            if x.journal and self.settings.gemini_api_key and not abbreviated:
                 self.fix_venue(x)
             log.info("done %s in %.1fs", row["original_filename"], time.monotonic() - start)
             return x
@@ -152,6 +185,10 @@ class Library:
             return exc
 
     def _store(self, paper_id: int, x: Extraction | Exception) -> None:
+        with self.lock:
+            self._store_locked(paper_id, x)
+
+    def _store_locked(self, paper_id: int, x: Extraction | Exception) -> None:
         if isinstance(x, Exception):
             self.conn.execute("UPDATE papers SET status = 'error', error = ? WHERE id = ?",
                               (str(x)[:500], paper_id))
@@ -191,59 +228,64 @@ class Library:
     def save_draft(self, paper_id: int, entry: Entry, filename: str, bibtex: str,
                    tags: list[str]) -> None:
         override = bibtex.strip() != render(entry).strip()
-        self.conn.execute(
-            "UPDATE papers SET entry_json = ?, proposed_filename = ?, bibtex = ?, "
-            "bibtex_override = ? WHERE id = ?",
-            (entry.model_dump_json(), filename, bibtex.strip(), int(override), paper_id),
-        )
-        db.set_paper_tags(self.conn, paper_id, tags)
-        self.conn.commit()
+        with self.lock:
+            self.conn.execute(
+                "UPDATE papers SET entry_json = ?, proposed_filename = ?, bibtex = ?, "
+                "bibtex_override = ? WHERE id = ?",
+                (entry.model_dump_json(), filename, bibtex.strip(), int(override), paper_id),
+            )
+            db.set_paper_tags(self.conn, paper_id, tags)
+            self.conn.commit()
 
     def delete(self, paper_id: int) -> None:
-        """Send the PDF to the trash and forget the paper; drop it from library.bib."""
-        row = self.get(paper_id)
-        self.storage.trash(row["file_id"])
-        self.conn.execute("DELETE FROM paper_tags WHERE paper_id = ?", (paper_id,))
-        self.conn.execute("DELETE FROM papers_fts WHERE rowid = ?", (paper_id,))
-        self.conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
-        self.conn.commit()
-        if row["status"] == "confirmed":
-            self.write_bib()
+        """Move the PDF to the trash and forget the paper; drop it from library.bib."""
+        with self.lock:
+            row = self.get(paper_id)
+            self.storage.trash(row["file_id"])
+            self._forget_cache(row["file_id"])
+            self.conn.execute("DELETE FROM paper_tags WHERE paper_id = ?", (paper_id,))
+            self.conn.execute("DELETE FROM papers_fts WHERE rowid = ?", (paper_id,))
+            self.conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
+            self.conn.commit()
+            if row["status"] == "confirmed":
+                self.write_bib()
 
     # ---- the only writes to storage ---------------------------------------
     def confirm(self, paper_id: int, entry: Entry, filename: str, bibtex: str,
                 tags: list[str]) -> str:
         """Rename the file, then record it and rewrite library.bib."""
-        row = self.get(paper_id)
-        if entry.key in self.taken_keys(exclude=paper_id):
-            raise ValueError(f"Citation key {entry.key} is already used.")
-        if not filename.lower().endswith(".pdf"):
-            filename += ".pdf"
-        names = self.storage.list_library_names()
-        if row["status"] == "confirmed":
-            names.discard(row["filename"])
-        filename = dedupe_filename(filename, names)
-        self.storage.rename(row["file_id"], filename, to_library=True)
-        self.save_draft(paper_id, entry, filename, bibtex, tags)
-        self.conn.execute(
-            "UPDATE papers SET status = 'confirmed', filename = ?, "
-            "confirmed_at = CURRENT_TIMESTAMP WHERE id = ?", (filename, paper_id),
-        )
-        db.reindex(self.conn, paper_id)
-        self.conn.commit()
-        self.write_bib()
+        with self.lock:
+            row = self.get(paper_id)
+            if entry.key in self.taken_keys(exclude=paper_id):
+                raise ValueError(f"Citation key {entry.key} is already used.")
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+            names = self.storage.list_library_names()
+            if row["status"] == "confirmed":
+                names.discard(row["filename"])
+            filename = dedupe_filename(filename, names)
+            self.storage.rename(row["file_id"], filename, to_library=True)
+            self.save_draft(paper_id, entry, filename, bibtex, tags)
+            self.conn.execute(
+                "UPDATE papers SET status = 'confirmed', filename = ?, "
+                "confirmed_at = CURRENT_TIMESTAMP WHERE id = ?", (filename, paper_id),
+            )
+            db.reindex(self.conn, paper_id)
+            self.conn.commit()
+            self.write_bib()
         return filename
 
     def undo(self, paper_id: int) -> None:
-        row = self.get(paper_id)
-        self.storage.rename(row["file_id"], row["original_filename"], to_library=False)
-        self.conn.execute(
-            "UPDATE papers SET status = 'staged', filename = original_filename, "
-            "confirmed_at = NULL WHERE id = ?", (paper_id,),
-        )
-        db.reindex(self.conn, paper_id)
-        self.conn.commit()
-        self.write_bib()
+        with self.lock:
+            row = self.get(paper_id)
+            self.storage.rename(row["file_id"], row["original_filename"], to_library=False)
+            self.conn.execute(
+                "UPDATE papers SET status = 'staged', filename = original_filename, "
+                "confirmed_at = NULL WHERE id = ?", (paper_id,),
+            )
+            db.reindex(self.conn, paper_id)
+            self.conn.commit()
+            self.write_bib()
 
     def write_bib(self) -> None:
         self.storage.write_bib(self.bib_text())
@@ -259,18 +301,28 @@ class Library:
         return render_library([r["bibtex"] for r in rows]) if rows else ""
 
     # ---- search -------------------------------------------------------------
-    def search(self, q: str = "", tags: list[str] | None = None) -> list[sqlite3.Row]:
-        sql = "SELECT p.* FROM papers p"
+    def _search_sql(self, q: str, tags: list[str]) -> tuple[str, list, str]:
+        sql = " FROM papers p"
         args: list = []
         where = ["p.status = 'confirmed'"]
         if q.strip():
             sql += " JOIN papers_fts f ON f.rowid = p.id"
             where.append("papers_fts MATCH ?")
             args.append(db.fts_query(q))
-        for t in tags or []:
+        for t in tags:
             where.append("EXISTS (SELECT 1 FROM paper_tags pt JOIN tags t ON t.id = pt.tag_id "
                          "WHERE pt.paper_id = p.id AND t.name = ?)")
             args.append(t)
         sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY f.rank" if q.strip() else " ORDER BY p.confirmed_at DESC"
-        return self.conn.execute(sql, args).fetchall()
+        order = " ORDER BY f.rank" if q.strip() else " ORDER BY p.confirmed_at DESC, p.id DESC"
+        return sql, args, order
+
+    def search(self, q: str = "", tags: list[str] | None = None,
+               limit: int = -1, offset: int = 0) -> list[sqlite3.Row]:
+        sql, args, order = self._search_sql(q, tags or [])
+        return self.conn.execute("SELECT p.*" + sql + order + " LIMIT ? OFFSET ?",
+                                 [*args, limit, offset]).fetchall()
+
+    def count(self, q: str = "", tags: list[str] | None = None) -> int:
+        sql, args, _ = self._search_sql(q, tags or [])
+        return self.conn.execute("SELECT COUNT(*)" + sql, args).fetchone()[0]

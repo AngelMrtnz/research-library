@@ -24,6 +24,9 @@ SYMBOLS = {
     "subset": "⊂", "ltimes": "⋉", "rtimes": "⋊", "ell": "ℓ", "hbar": "ℏ",
     "sim": "∼", "simeq": "≃", "cong": "≅", "pm": "±", "star": "⋆",
 }
+# Symbols whose name keeps the meaning in a filename: $L_\infty$ -> L-infinity.
+WORDS = {"infty": "infinity", "partial": "partial", "nabla": "nabla", "hbar": "hbar",
+         "ell": "ell"}
 BB = {"C": "ℂ", "H": "ℍ", "N": "ℕ", "P": "ℙ", "Q": "ℚ", "R": "ℝ", "Z": "ℤ"}
 SUP = dict(zip("0123456789+-=()nijkmrst*", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱʲᵏᵐʳˢᵗ*", strict=True))
 SUB = dict(zip("0123456789+-=()aeijkmnoprstux", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑᵢⱼₖₘₙₒₚᵣₛₜᵤₓ", strict=True))
@@ -66,7 +69,9 @@ def to_plain(text: str) -> str:
     if "\\" not in text and "$" not in text:
         return text
     out = _FONT.sub(lambda m: m.group(2), text)
-    out = _CMD.sub(lambda m: m.group(1) if m.group(1) in GREEK else "", out)
+    out = _CMD.sub(lambda m: m.group(1) if m.group(1) in GREEK
+                   else "\0" + WORDS[m.group(1)] if m.group(1) in WORDS else "", out)
+    out = re.sub(r"[\^_]\{?\0", "-", out).replace("\0", "")  # L_\infty -> L-infinity
     out = re.sub(r"\\([&%#$_{}])", r"\1", out)
     out = re.sub(r"[\^_]", "", out)
     return out.replace("$", "").replace("{", "").replace("}", "")

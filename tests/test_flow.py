@@ -24,7 +24,7 @@ def client(tmp_path, monkeypatch):
     inbox.mkdir(parents=True)
     make_pdf(inbox / "scan_0042.pdf", "On the geometry of singular Lagrangians",
              "Fabrizio Pugliese and Alexandre M. Vinogradov")
-    env = {"AUTH_DISABLED": "1", "STORAGE": "local", "GEMINI_API_KEY": "",
+    env = {"AUTH_DISABLED": "1", "STORAGE": "local", "GEMINI_API_KEY": "", "ONLINE_LOOKUP": "0",
            "DATA_DIR": str(tmp_path / "data"), "LOCAL_LIBRARY_DIR": str(lib),
            "LOCAL_INBOX_DIR": str(inbox)}
     for k, v in env.items():
@@ -111,12 +111,56 @@ def test_inbox_scanned_automatically_and_duplicates_flagged(client):
     assert any("Possible duplicate" in n for n in notes)
 
 
-def test_delete_trashes_unconfirmed_pdf(client):
+def test_delete_moves_pdf_to_deleted_folder(client):
     client.post("/scan")
+    client.get("/papers/1/preview.png")
     r = client.post("/staging/1/delete", follow_redirects=False)
     assert r.status_code == 303
     assert not (client.inbox / "scan_0042.pdf").exists()
+    assert (client.lib_dir / "_Deleted" / "scan_0042.pdf").exists()
     assert "scan_0042.pdf" not in client.get("/staging").text
+    assert not list((client.lib_dir.parent / "data" / "cache").iterdir())
+
+
+def test_posts_from_other_sites_are_refused(client):
+    client.post("/scan")
+    for headers in ({"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}):
+        r = client.post("/staging/1/delete", headers=headers, follow_redirects=False)
+        assert r.status_code == 403
+    assert (client.inbox / "scan_0042.pdf").exists()
+    r = client.post("/scan", headers={"Origin": "http://testserver",
+                                      "Sec-Fetch-Site": "same-origin"}, follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_pdf_served_from_disk_without_cache_copy(client):
+    client.post("/scan")
+    r = client.get("/papers/1/file.pdf")
+    assert r.content == (client.inbox / "scan_0042.pdf").read_bytes()
+    assert not list((client.lib_dir.parent / "data" / "cache").glob("*.pdf"))
+
+
+def test_file_moved_outside_the_app_is_found(client):
+    client.post("/scan")
+    sub = client.lib_dir / "Elsewhere"
+    sub.mkdir()
+    (client.inbox / "scan_0042.pdf").rename(sub / "scan_0042.pdf")
+    assert client.get("/papers/1/file.pdf").status_code == 200
+
+
+def test_library_list_pages_and_copies_bibtex_on_demand(client, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main, "PAGE_SIZE", 1)
+    client.post("/scan")
+    client.post("/staging/1/confirm", data={
+        "title": "On the geometry of singular Lagrangians",
+        "authors": "Pugliese, Fabrizio\nVinogradov, Alexandre M.", "year": "2000",
+        "entry_type": "article", "journal": "J. Geom. Phys.", "key": "PV_2000",
+        "filename": "PV.pdf"})
+    page = client.get("/").text
+    assert "1 paper" in page and "Show more" in page and "@article" not in page
+    assert client.get("/", params={"offset": 1}).text.strip() == ""
+    assert client.get("/papers/1/bibtex").text.startswith("@article{PV_2000,")
 
 
 def test_tag_editor_replaces_tags_and_normalizes(client):
@@ -126,3 +170,20 @@ def test_tag_editor_replaces_tags_and_normalizes(client):
     assert "poisson" in {t["name"] for t in r.json()["index"]}
     r = client.post("/papers/1/tags", data={"tags": "poisson"})
     assert r.json()["tags"] == ["poisson"]
+
+
+def test_online_lookup_only_for_articles_and_preprints(client, monkeypatch):
+    from app import services
+    from app.extract import Extraction
+
+    calls = []
+    monkeypatch.setattr(services, "published_version", lambda *a: calls.append(a) or {})
+    import app.main as main
+    lib = main.get_library("")
+    lib.settings.online_lookup = True
+    for kind, n in (("book", 0), ("phdthesis", 0), ("unpublished", 1), ("article", 2)):
+        monkeypatch.setattr(services, "extract", lambda *a, k=kind: Extraction(
+            entry_type=k, title="T", authors=[], year=2000))
+        client.post("/scan")
+        lib._extract(lib.get(1), [])
+        assert len(calls) == n, kind

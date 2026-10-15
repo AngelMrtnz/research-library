@@ -97,10 +97,13 @@ def journal_name(item: dict, journal_ref: str = "") -> str:
 
 
 def fields_from(item: dict, journal_ref: str = "") -> dict:
+    """Entry fields, plus ``abbreviated`` when the journal name is already the short form."""
     year = ((item.get("issued") or {}).get("date-parts") or [[None]])[0][0]
+    journal = journal_name(item, journal_ref)
     return {k: v for k, v in {
         "entry_type": "article",
-        "journal": journal_name(item, journal_ref),
+        "journal": journal,
+        "abbreviated": journal != (item.get("container-title") or [""])[0],
         "volume": item.get("volume", ""),
         "number": item.get("issue", ""),
         "pages": item.get("page", ""),

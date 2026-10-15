@@ -31,6 +31,13 @@
   </div>
   <div id="toast" class="fixed bottom-4 right-4 z-50 hidden items-center gap-3 rounded-lg bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg dark:bg-white dark:text-slate-900"></div>
   <script>
+    // BibTeX is fetched on click, so the library page stays small.
+    async function copyBib(btn, id) {
+      const text = await (await fetch(`/papers/${id}/bibtex`)).text();
+      await navigator.clipboard.writeText(text);
+      const label = btn.textContent; btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = label; }, 1200);
+    }
     // Drag PDFs onto any page: they go to the Inbox and show up in Review.
     const drop = document.getElementById("drop");
     let depth = 0;
