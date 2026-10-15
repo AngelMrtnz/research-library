@@ -51,9 +51,9 @@ def test_filenames():
     assert build_filename(1989, ARN, "Mathematical Methods of Classical Mechanics") == (
         "1989_Arnold_Mathematical Methods of Classical Mechanics.pdf")
     assert build_filename(2024, LRV, "Multisymplectic reductions") == (
-        "2024_de Lucas-Rivas-Vilariño_Multisymplectic reductions.pdf")
+        "2024_de Lucas-Rivas-Vilarino_Multisymplectic reductions.pdf")
     assert build_filename(2026, DLGIMR, "From 2-covariant tensor fields") == (
-        "2026_deLeó-Grà-Izq-Mar-Riv_From 2-covariant tensor fields.pdf")
+        "2026_deLeo-Gra-Izq-Mar-Riv_From 2-covariant tensor fields.pdf")
 
 
 def test_filename_sanitized_and_short():
@@ -134,3 +134,10 @@ def test_render_in_preparation():
 def test_author_model_roundtrip():
     a = Author(given="Manuel", particle="de", family="León")
     assert Author.model_validate(a.model_dump()) == a
+
+
+def test_filenames_are_ascii():
+    authors = [parse_author("Łukasz Großmann"), parse_author("Søren Ødegård")]
+    name = build_filename(2021, authors, "Lie–Poisson “brackets” on Æ-manifolds: ∞-jets")
+    assert name == "2021_Grossmann-Odegard_Lie-Poisson brackets on AE-manifolds - -jets.pdf"
+    assert name.isascii()

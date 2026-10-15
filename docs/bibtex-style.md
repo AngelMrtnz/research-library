@@ -56,8 +56,8 @@ These are Billy's own examples, with keys updated to the confirmed 4-digit year 
 }
 ```
 
-## Matching filenames (authors in printed order)
-- `2026_deLeó-Grà-Izq-Mar-Riv_From 2-covariant tensor fields to Poisson and Jacobi structures.pdf`
+## Matching filenames (authors in printed order, ASCII only)
+- `2026_deLeo-Gra-Izq-Mar-Riv_From 2-covariant tensor fields to Poisson and Jacobi structures.pdf`
 - `2000_Pugliese-Vinogradov_On the geometry of singular Lagrangians.pdf`
 - `1989_Arnold_Mathematical Methods of Classical Mechanics.pdf`
-- `2024_de Lucas-Rivas-Vilariño_Multisymplectic reductions induced by polycosymplectic structures.pdf`
+- `2024_de Lucas-Rivas-Vilarino_Multisymplectic reductions induced by polycosymplectic structures.pdf`

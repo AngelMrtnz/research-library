@@ -19,7 +19,7 @@ Turns one PDF into a **proposal**. Nothing is renamed or written to `library.bib
 One letter per surname in printed order, a particle adds its lowercase initials (`de León` → `dL`), then `_` and the 4-digit year: `dLGIMR_2026`, `PV_2000`. Single author: first three letters of the surname, `Arn_1989`. ASCII-fold accents; on collision add `a`, `b`.
 
 ## Filename
-`{Year}_{Authors}_{Title}.pdf`, authors in printed order. Up to 3 authors: full surnames joined by `-` (`2024_de Lucas-Rivas-Vilariño_…`). More than 3: first three letters of each surname (`2026_deLeó-Grà-Izq-Mar-Riv_…`). Windows-safe (`:` → ` -`, drop `<>"/\|?*`), ≤ 150 chars cut at a word boundary, ` (2)` on clash.
+`{Year}_{Authors}_{Title}.pdf`, authors in printed order. Up to 3 authors: full surnames joined by `-` (`2024_de Lucas-Rivas-Vilarino_…`). More than 3: first three letters of each surname (`2026_deLeo-Gra-Izq-Mar-Riv_…`). Plain ASCII (accents stripped, ß→ss, ł→l, other non-ASCII dropped), Windows-safe (`:` → ` -`, drop `<>"/\|?*`), ≤ 150 chars cut at a word boundary, ` (2)` on clash.
 
 ## BibTeX (see docs/bibtex-style.md)
 - `author`: full `Given Surname` names joined by ` and `.

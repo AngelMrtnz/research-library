@@ -5,7 +5,7 @@ House rules (see PLAN.md / bibtex-style.md):
 - Citation key: one letter per surname (particle adds its lowercase initials,
   ``de León`` -> ``dL``), then ``_`` and the 4-digit year. A single author
   uses the first three letters of the surname (``Arn_1989``).
-- Filename: ``{Year}_{Authors}_{Title}.pdf``. Up to ``FULL_NAME_LIMIT``
+- Filename: ``{Year}_{Authors}_{Title}.pdf``, plain ASCII (no accents). Up to ``FULL_NAME_LIMIT``
   authors use full surnames joined by ``-``; more use 3-letter surnames.
 """
 
@@ -77,9 +77,20 @@ def parse_author(text: str) -> Author:
     return Author(given=parts[0], family=parts[1])
 
 
+# Letters NFKD does not decompose, plus typographic punctuation.
+_TRANSLIT = str.maketrans({
+    "ß": "ss", "ẞ": "SS", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ø": "o", "Ø": "O",
+    "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ð": "d", "Ð": "D", "þ": "th", "Þ": "Th",
+    "ı": "i", "ŀ": "l", "Ŀ": "L", "‘": "'", "’": "'", "‚": "'", "“": "", "”": "", "„": "",
+    "–": "-", "—": "-", "−": "-", "‐": "-", "‑": "-", "…": "...", "×": "x", "·": " ",
+})
+
+
 def ascii_fold(text: str) -> str:
-    norm = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in norm if not unicodedata.combining(c))
+    """Strip accents and transliterate; anything still non-ASCII is dropped."""
+    norm = unicodedata.normalize("NFKD", text.translate(_TRANSLIT))
+    out = "".join(c for c in norm if not unicodedata.combining(c))
+    return out.encode("ascii", "ignore").decode()
 
 
 def _letters(text: str) -> str:
@@ -121,8 +132,8 @@ _RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {
 
 
 def sanitize(text: str) -> str:
-    """Make text safe for a Windows filename component."""
-    text = text.replace(":", " -")
+    """Make text safe for a Windows filename component: plain ASCII only."""
+    text = ascii_fold(text).replace(":", " -")
     text = _INVALID.sub("", text)
     text = re.sub(r"\s+", " ", text).strip().rstrip(". ")
     if text.upper() in _RESERVED:
