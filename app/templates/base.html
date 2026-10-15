@@ -16,7 +16,7 @@
     <nav class="mx-auto flex max-w-6xl items-center gap-1 px-4 py-2.5 text-sm">
       <a href="/" class="mr-4 font-semibold tracking-tight">Research Library</a>
       {{ nav("/", "Library", path == "/") }}
-      {% call nav("/staging", "Review", path.startswith("/staging")) %}{% if staged %}<span class="rounded-full bg-blue-600 px-1.5 text-xs font-medium text-white">{{ staged }}</span>{% endif %}{% endcall %}
+      {% call nav("/staging", "Review", path.startswith("/staging")) %}<span id="review-count" class="rounded-full bg-blue-600 px-1.5 text-xs font-medium text-white {{ '' if staged else 'hidden' }}">{{ staged }}</span>{% endcall %}
       {{ nav("/tags", "Tags", path == "/tags") }}
       {% if local %}<form method="post" action="/quit" class="ml-auto"><button class="text-slate-400 hover:text-slate-800 dark:hover:text-white">Quit</button></form>{% endif %}
       {% if auth_on %}<a href="/logout" class="{{ '' if local else 'ml-auto' }} text-slate-500 hover:text-slate-800 dark:hover:text-white">Sign out</a>{% endif %}
@@ -28,9 +28,10 @@
   </main>
   <div id="drop" class="pointer-events-none fixed inset-0 z-50 hidden items-center justify-center bg-blue-600/20 backdrop-blur-sm">
     <div class="rounded-2xl border-2 border-dashed border-blue-500 bg-white px-10 py-8 text-center text-lg font-medium text-blue-700 shadow-xl dark:bg-slate-800 dark:text-blue-300">
-      <span id="drop-text">Drop PDFs</span>
+      Drop PDFs
     </div>
   </div>
+  <div id="toast" class="fixed bottom-4 right-4 z-50 hidden items-center gap-3 rounded-lg bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg dark:bg-white dark:text-slate-900"></div>
   <script>
     // Drag PDFs onto any page: they go to the Inbox and show up in Review.
     const drop = document.getElementById("drop");
@@ -45,15 +46,35 @@
       e.preventDefault(); depth = 0;
       uploadPdfs(e.dataTransfer.files);
     });
+    // Uploads run in the background; a small notice shows progress and you keep working.
+    const toast = document.getElementById("toast");
+    let toastTimer;
+    function notify(html, ms) {
+      clearTimeout(toastTimer);
+      toast.innerHTML = html;
+      toast.classList.replace("hidden", "flex");
+      if (ms) toastTimer = setTimeout(() => toast.classList.replace("flex", "hidden"), ms);
+    }
+    const plural = (n) => `${n} PDF${n === 1 ? "" : "s"}`;
     async function uploadPdfs(files) {
+      show(false);
       const pdfs = [...files].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-      if (!pdfs.length) { show(false); return; }
-      show(true);
-      document.getElementById("drop-text").textContent = `Adding ${pdfs.length} PDF${pdfs.length > 1 ? "s" : ""}`;
+      if (!pdfs.length) return;
+      notify(`Adding ${plural(pdfs.length)}`);
       const body = new FormData();
       pdfs.forEach((f) => body.append("files", f));
-      const r = await fetch("/upload", { method: "POST", body });
-      location.href = r.ok ? r.url : "/staging?msg=Upload+failed";
+      try {
+        const r = await fetch("/upload", { method: "POST", body, headers: { Accept: "application/json" } });
+        if (!r.ok) throw new Error(r.status);
+        const { added, waiting } = await r.json();
+        const badge = document.getElementById("review-count");
+        badge.textContent = waiting; badge.classList.toggle("hidden", !waiting);
+        const rows = document.getElementById("rows");
+        if (rows) htmx.ajax("GET", "/staging", { target: "#rows", swap: "innerHTML" });
+        notify(`${plural(added)} added${rows ? "" : ' <a href="/staging" class="font-medium underline">Review</a>'}`, 5000);
+      } catch {
+        notify("Upload failed", 5000);
+      }
     }
   </script>
 </body>

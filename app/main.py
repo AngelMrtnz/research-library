@@ -65,12 +65,18 @@ def process_in_background(lib: Library) -> None:
             _process_lock.release()
 
 
+def waiting() -> int:
+    return _conn.execute("SELECT COUNT(*) FROM papers WHERE status IN "
+                         "('pending','staged','error')").fetchone()[0]
+
+
 def tag_index() -> list[dict]:
     return [{"name": t["name"], "color": t["color"], "n": t["n"]} for t in db.all_tags(_conn)]
 
 
 def page(request: Request, name: str, **ctx) -> HTMLResponse:
     ctx.setdefault("tag_index", tag_index())
+    ctx.setdefault("staged", waiting())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -110,9 +116,7 @@ def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[
     rows = lib.search(q, tags)
     ctx = dict(q=q, active=tags, papers=[(r, entry_dict(r), db.paper_tags(_conn, r["id"]))
                                          for r in rows],
-               tags=db.all_tags(_conn), export_qs=urlencode({"q": q, "tag": tags}, doseq=True),
-               staged=_conn.execute("SELECT COUNT(*) FROM papers WHERE status IN "
-                                    "('pending','staged','error')").fetchone()[0])
+               tags=db.all_tags(_conn), export_qs=urlencode({"q": q, "tag": tags}, doseq=True))
     if request.headers.get("HX-Request") and request.headers.get("HX-Target") == "results":
         return page(request, "partials/results.html", **ctx)
     return page(request, "library.html", **ctx)
@@ -203,7 +207,7 @@ def scan(bg: BackgroundTasks, lib: Library = Depends(get_library)):
 
 
 @app.post("/upload")
-async def upload(files: list[UploadFile], bg: BackgroundTasks,
+async def upload(request: Request, files: list[UploadFile], bg: BackgroundTasks,
                  lib: Library = Depends(get_library)):
     n = 0
     for f in files:
@@ -211,6 +215,8 @@ async def upload(files: list[UploadFile], bg: BackgroundTasks,
             lib.upload(f.filename, await f.read())
             n += 1
     bg.add_task(process_in_background, lib)
+    if "application/json" in request.headers.get("accept", ""):
+        return {"added": n, "waiting": waiting()}
     return RedirectResponse(f"/staging?msg=Added+{n}+PDF(s)", status_code=303)
 
 
