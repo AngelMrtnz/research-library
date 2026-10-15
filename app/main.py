@@ -60,7 +60,9 @@ def get_library(_: str = Depends(require_owner)) -> Library:
 def process_in_background(lib: Library) -> None:
     if _process_lock.acquire(blocking=False):
         try:
-            lib.process_pending()
+            # Keep going while new PDFs arrive during a run.
+            while lib.process_pending():
+                pass
         finally:
             _process_lock.release()
 
@@ -187,8 +189,9 @@ async def update_tag(request: Request, tag_id: int, _: Library = Depends(get_lib
 @app.get("/staging", response_class=HTMLResponse)
 def staging_page(request: Request, bg: BackgroundTasks, msg: str = "",
                  lib: Library = Depends(get_library)):
-    if not request.headers.get("HX-Request") and lib.scan():
-        bg.add_task(process_in_background, lib)
+    if not request.headers.get("HX-Request"):
+        lib.scan()
+        bg.add_task(process_in_background, lib)  # also picks up anything left pending
     rows = _conn.execute(
         "SELECT * FROM papers WHERE status IN ('pending','staged','error') ORDER BY id"
     ).fetchall()

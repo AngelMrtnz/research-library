@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -81,9 +82,13 @@ class Library:
         self._store(paper_id, self._extract(self.get(paper_id), tags))
 
     def _extract(self, row: sqlite3.Row, tags: list[str]) -> Extraction | Exception:
+        start = time.monotonic()
+        log.info("reading %s", row["original_filename"])
         try:
-            return extract(self.pdf_bytes(row["file_id"]), tags,
-                           self.settings.gemini_api_key, self.settings.gemini_model)
+            x = extract(self.pdf_bytes(row["file_id"]), tags,
+                        self.settings.gemini_api_key, self.settings.gemini_model)
+            log.info("done %s in %.1fs", row["original_filename"], time.monotonic() - start)
+            return x
         except Exception as exc:  # noqa: BLE001 - shown to the user on the staging page
             log.exception("extraction failed for %s", row["original_filename"])
             return exc

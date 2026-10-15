@@ -3,6 +3,7 @@
 If it is already running, only the browser opens. Output goes to data/server.log.
 """
 
+import logging
 import socket
 import sys
 import threading
@@ -27,6 +28,11 @@ def main() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     log = open(settings.data_dir / "server.log", "w", encoding="utf-8", buffering=1)  # noqa: SIM115
     sys.stdout = sys.stderr = log
+    logging.basicConfig(level=logging.INFO, stream=log,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    for noisy in ("httpx", "httpcore", "google_genai", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    logging.getLogger("app").info("started on %s", URL)
 
     import uvicorn
 

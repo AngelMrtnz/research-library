@@ -125,7 +125,7 @@ def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> E
     from google.genai import errors, types
 
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
-        retry_options=types.HttpRetryOptions(attempts=2)))
+        timeout=90_000, retry_options=types.HttpRetryOptions(attempts=2)))
     prompt = PROMPT.format(tags=", ".join(existing_tags) or "(none yet)",
                            text=page_text(pdf, 1).strip()[:6000] or "(none: scanned page)")
     contents = [types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
