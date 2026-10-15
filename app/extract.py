@@ -30,7 +30,9 @@ class Extraction(BaseModel):
                        "normal Unicode characters (León), and math or symbols in LaTeX "
                        "between $...$ exactly as printed, e.g. $\\mathbb{R}^n$, "
                        "$\\mathfrak{g}$, $\\alpha$-Lie; never flatten them to plain ASCII. Join "
-                       "two people's names with a LaTeX en dash: Hamilton--Jacobi.")
+                       "two different people's names with a LaTeX en dash (Hamilton--Jacobi, "
+                       "Lie--Poisson, Euler--Lagrange), but keep one person's double surname "
+                       "with a single hyphen (Levi-Civita, Martínez-Muñoz).")
     authors: list[Author] = Field(description="All authors in the order printed. given = "
                                   "given names as printed, particle = lowercase surname "
                                   "particle such as 'de', 'van der', family = surname. "
