@@ -103,6 +103,8 @@ SQLite (+ FTS5) ◄────────────────────�
 - [ ] Settings page to edit house rules without code (threshold, particle rule)
 - [ ] Batch "confirm all reviewed" on the staging list
 - [x] Review page tidy-up: Delete (to trash) instead of Skip, shorter labels; LaTeX math kept in titles and BibTeX, ASCII only in filenames
+- [x] Drag PDFs onto any page; one "Add PDFs" button (no Rescan/Upload); library.bib tab removed, small ".bib" download in Library
+- [x] Scanned PDFs: Gemini told to read the page image when the text layer is empty or garbled
 
 ## Guiding principle
 Minimal, easy and fast to run (Billy). Prefer fewer dependencies, fewer clicks, fewer visible fields.

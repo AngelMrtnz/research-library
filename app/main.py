@@ -115,13 +115,15 @@ def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[
 def export_bib(q: str = "", tag: list[str] = Query(default=[]),
                lib: Library = Depends(get_library)):
     ids = [r["id"] for r in lib.search(q, tag or [])]
+    name = "export.bib" if q or tag else "library.bib"
     return PlainTextResponse(lib.bib_text(ids), headers={
-        "Content-Disposition": 'attachment; filename="export.bib"'})
+        "Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/library.bib")
 def master_bib(lib: Library = Depends(get_library)):
-    return PlainTextResponse(lib.bib_text())
+    return PlainTextResponse(lib.bib_text(), headers={
+        "Content-Disposition": 'attachment; filename="library.bib"'})
 
 
 @app.post("/papers/{paper_id}/tags", response_class=HTMLResponse)
@@ -192,11 +194,13 @@ def scan(bg: BackgroundTasks, lib: Library = Depends(get_library)):
 @app.post("/upload")
 async def upload(files: list[UploadFile], bg: BackgroundTasks,
                  lib: Library = Depends(get_library)):
+    n = 0
     for f in files:
         if f.filename and f.filename.lower().endswith(".pdf"):
             lib.upload(f.filename, await f.read())
+            n += 1
     bg.add_task(process_in_background, lib)
-    return RedirectResponse("/staging?msg=Uploaded", status_code=303)
+    return RedirectResponse(f"/staging?msg=Added+{n}+PDF(s)", status_code=303)
 
 
 @app.get("/papers/{paper_id}/preview.png")
