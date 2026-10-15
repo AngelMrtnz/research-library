@@ -243,3 +243,18 @@ def test_reread_all_sends_review_back_to_gemini(client):
     r = client.post("/staging/reread-all", follow_redirects=False)
     assert r.status_code == 303 and "Reading+1" in r.headers["location"]
     assert main._conn.execute("SELECT status FROM papers").fetchone()[0] == "staged"
+
+
+def test_library_tag_row_follows_the_papers_shown(client):
+    client.post("/scan")
+    form = {"title": "On the geometry of singular Lagrangians",
+            "authors": "Pugliese, Fabrizio\nVinogradov, Alexandre M.", "year": "2000",
+            "entry_type": "article", "journal": "J. Geom. Phys.", "tags": "lagrangian poisson",
+            "key": "PV_2000", "filename": "2000_PV.pdf", "bibtex": ""}
+    client.post("/staging/1/confirm", data=form)
+    page = client.get("/").text
+    assert 'id="tag-row"' in page and "lagrangian" in page
+    filtered = client.get("/", params={"tag": "lagrangian"}).text
+    assert "Papers tagged" in filtered and "Clear filters" in filtered
+    assert "No papers" in client.get("/", params={"q": "hamiltonian"}).text
+    assert 'id="tag-row"' not in client.get("/", params={"q": "hamiltonian"}).text

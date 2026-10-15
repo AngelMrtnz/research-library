@@ -352,6 +352,17 @@ class Library:
         return self.conn.execute("SELECT p.*" + sql + order + " LIMIT ? OFFSET ?",
                                  [*args, limit, offset]).fetchall()
 
+    def tag_counts(self, q: str = "", tags: list[str] | None = None) -> list[sqlite3.Row]:
+        """Tags of the papers matching this search, most frequent first (active ones left out)."""
+        sql, args, _ = self._search_sql(q, tags or [])
+        active = list(tags or [])
+        skip = f" AND t.name NOT IN ({','.join('?' * len(active))})" if active else ""
+        return self.conn.execute(
+            "SELECT t.name, t.color, COUNT(*) AS n FROM tags t "
+            "JOIN paper_tags pt ON pt.tag_id = t.id "
+            f"WHERE pt.paper_id IN (SELECT p.id{sql}){skip} "
+            "GROUP BY t.id ORDER BY n DESC, t.name", [*args, *active]).fetchall()
+
     def count(self, q: str = "", tags: list[str] | None = None) -> int:
         sql, args, _ = self._search_sql(q, tags or [])
         return self.conn.execute("SELECT COUNT(*)" + sql, args).fetchone()[0]

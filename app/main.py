@@ -130,7 +130,9 @@ def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[
     rows = lib.search(q, tags, limit=PAGE_SIZE, offset=offset)
     total = lib.count(q, tags) if offset == 0 else 0
     more = offset + PAGE_SIZE
-    ctx = dict(q=q, active=tags, total=total,
+    colors = {t["name"]: t["color"] for t in db.all_tags(_conn)}
+    ctx = dict(q=q, active=tags, colors=colors, total=total,
+               facets=lib.tag_counts(q, tags) if offset == 0 else [],
                papers=[(r, entry_dict(r), db.paper_tags(_conn, r["id"])) for r in rows],
                more_qs=urlencode({"q": q, "tag": tags, "offset": more}, doseq=True)
                if len(rows) == PAGE_SIZE else "",
@@ -139,7 +141,7 @@ def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[
         return page(request, "partials/rows.html", **ctx)
     if request.headers.get("HX-Request") and request.headers.get("HX-Target") == "results":
         return page(request, "partials/results.html", **ctx)
-    return page(request, "library.html", tags=db.all_tags(_conn), **ctx)
+    return page(request, "library.html", **ctx)
 
 
 @app.get("/papers/{paper_id}/bibtex")

@@ -13,16 +13,21 @@
 </div>
 <div id="active-tags">{% for t in active %}<input type="hidden" name="tag" value="{{ t }}">{% endfor %}</div>
 
-<div class="mt-4 flex flex-wrap gap-2">
-  {% for t in tags if t.n or t.name in active %}
-    {% set on = t.name in active %}
-    {% set others = active | reject('equalto', t.name) | list %}
-    <a href="/?{{ {'q': q, 'tag': (others if on else active + [t.name])} | qs }}"
-       class="rounded-full px-3 py-0.5 text-xs font-medium ring-1 ring-inset bg-{{ t.color }}-100 text-{{ t.color }}-800 ring-{{ t.color }}-300 dark:bg-{{ t.color }}-900/40 dark:text-{{ t.color }}-200 {{ 'ring-2 ring-' ~ t.color ~ '-600' if on else 'opacity-80 hover:opacity-100' }}">
-      {{ t.name }} <span class="opacity-60">{{ t.n }}</span></a>
-  {% endfor %}
-  {% if active %}<a href="/?{{ {'q': q} | qs }}" class="px-2 text-xs text-slate-500 hover:text-slate-800">Clear</a>{% endif %}
-</div>
-
-<div id="results" class="mt-6">{% include "partials/results.html" %}</div>
+<div id="results" class="mt-4">{% include "partials/results.html" %}</div>
+<script>
+  // Tag row: one line of the most common tags; "All tags" opens the rest.
+  function setupTagRow() {
+    const row = document.getElementById("tag-row"), more = document.getElementById("tag-more");
+    if (!row || !more) return;
+    more.classList.toggle("hidden", row.scrollHeight <= row.clientHeight + 2 && !row.dataset.open);
+    more.onclick = () => {
+      row.dataset.open = row.dataset.open ? "" : "1";
+      row.classList.toggle("max-h-7", !row.dataset.open);
+      more.textContent = row.dataset.open ? "Fewer" : more.dataset.label;
+    };
+  }
+  document.addEventListener("DOMContentLoaded", setupTagRow);
+  document.addEventListener("htmx:afterSwap", setupTagRow);
+  addEventListener("resize", setupTagRow);
+</script>
 {% endblock %}
