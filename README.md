@@ -43,7 +43,7 @@ Only `OWNER_EMAIL` can sign in. Everything else gets a 403.
 1. Drop PDFs into `Papers/Inbox` (or use **Upload** on the Review page).
 2. Open **Review**. New PDFs are picked up automatically and read in parallel (a few seconds each with Gemini).
 3. Open one: first page on the left, every field editable on the right. Changing title/authors/year/type regenerates the key, filename and BibTeX live; you can still hand-edit the BibTeX.
-4. **Confirm & Rename** (or Ctrl+Enter) renames the file, moves it from `Inbox/` to `Papers/`, and rewrites `Papers/library.bib`. **Undo rename** puts it back. **Delete** moves the PDF to `Papers/_Deleted`, so you can always get it back.
+4. **Confirm & Rename** (or Ctrl+Enter) renames the file, moves it from `Inbox/` to `Papers/`, and rewrites `Papers/library.bib`. **Undo rename** puts it back. **Delete** sends the PDF to the Recycle Bin.
 
 ## Development
 ```bash

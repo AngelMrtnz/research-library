@@ -10,6 +10,7 @@ from __future__ import annotations
 import glob
 import io
 import json
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,6 @@ from typing import Protocol
 from .config import Settings
 
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
-DELETED = "_Deleted"
 
 
 @dataclass
@@ -37,6 +37,27 @@ class Storage(Protocol):
     def trash(self, file_id: str) -> None: ...
     def view_url(self, file_id: str) -> str | None: ...
     def local_path(self, file_id: str) -> Path | None: ...
+
+
+def recycle(path: Path) -> None:
+    """Move a file to the Windows Recycle Bin; on other systems, delete it."""
+    if sys.platform != "win32":
+        path.unlink(missing_ok=True)
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT),
+                    ("pFrom", wintypes.LPCWSTR), ("pTo", wintypes.LPCWSTR),
+                    ("fFlags", ctypes.c_uint16), ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", wintypes.LPCWSTR)]
+
+    # FO_DELETE with ALLOWUNDO (= Recycle Bin), no dialogs.
+    op = SHFILEOPSTRUCTW(None, 3, str(path.resolve()) + "\0", None,
+                         0x40 | 0x10 | 0x4 | 0x400, False, None, None)
+    if ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op)):
+        raise OSError(f"Could not move {path.name} to the Recycle Bin")
 
 
 class LocalStorage:
@@ -58,8 +79,7 @@ class LocalStorage:
         path = Path(self.index[file_id])
         if not path.exists():
             # Moved in Explorer: find it by name in the library folders.
-            hits = (p for d in (self.library, self.inbox)
-                    for p in d.rglob(glob.escape(path.name)) if p.parent.name != DELETED)
+            hits = (p for d in (self.library, self.inbox) for p in d.rglob(glob.escape(path.name)))
             found = next(hits, None)
             if found is None:
                 raise FileNotFoundError(f"{path.name} is no longer in {self.library}")
@@ -111,20 +131,11 @@ class LocalStorage:
         return self._register(path)
 
     def trash(self, file_id: str) -> None:
-        """Move the PDF to ``Papers/_Deleted``: recoverable, and out of the app's sight."""
+        """Send the PDF to the Recycle Bin (Windows) and forget it."""
         try:
-            src = self._path(file_id)
+            recycle(self._path(file_id))
         except FileNotFoundError:
-            src = None
-        if src is not None:
-            folder = self.library / DELETED
-            folder.mkdir(exist_ok=True)
-            dest = folder / src.name
-            n = 2
-            while dest.exists():
-                dest = folder / f"{src.stem} ({n}){src.suffix}"
-                n += 1
-            src.rename(dest)
+            pass
         self.index.pop(file_id, None)
         self._save()
 

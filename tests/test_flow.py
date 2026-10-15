@@ -111,13 +111,12 @@ def test_inbox_scanned_automatically_and_duplicates_flagged(client):
     assert any("Possible duplicate" in n for n in notes)
 
 
-def test_delete_moves_pdf_to_deleted_folder(client):
+def test_delete_removes_pdf_and_cache(client):
     client.post("/scan")
     client.get("/papers/1/preview.png")
     r = client.post("/staging/1/delete", follow_redirects=False)
     assert r.status_code == 303
     assert not (client.inbox / "scan_0042.pdf").exists()
-    assert (client.lib_dir / "_Deleted" / "scan_0042.pdf").exists()
     assert "scan_0042.pdf" not in client.get("/staging").text
     assert not list((client.lib_dir.parent / "data" / "cache").iterdir())
 
@@ -197,7 +196,6 @@ def test_delete_all_in_review(client):
     r = client.post("/staging/delete-all", follow_redirects=False)
     assert r.status_code == 303 and "Deleted+2" in r.headers["location"]
     assert not list(client.inbox.glob("*.pdf"))
-    assert len(list((client.lib_dir / "_Deleted").glob("*.pdf"))) == 2
     assert "Delete all" not in client.get("/staging").text
 
 

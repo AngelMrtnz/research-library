@@ -77,10 +77,10 @@
       <button formaction="/staging/{{ paper.id }}/save" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Save draft</button>
       {% if paper.status != 'confirmed' %}
       <button formaction="/staging/{{ paper.id }}/rerun" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Re-run AI</button>
-      <button formaction="/staging/{{ paper.id }}/delete" formnovalidate onclick="return confirm('Delete this PDF? It moves to Papers/_Deleted.')" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Delete</button>
+      <button formaction="/staging/{{ paper.id }}/delete" formnovalidate onclick="return confirm('Delete this PDF? It goes to the Recycle Bin.')" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Delete</button>
       {% else %}
       <button formaction="/papers/{{ paper.id }}/undo" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Undo rename</button>
-      <button formaction="/papers/{{ paper.id }}/delete" formnovalidate onclick="return confirm('Delete this paper? The PDF moves to Papers/_Deleted and it leaves library.bib.')" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Delete</button>
+      <button formaction="/papers/{{ paper.id }}/delete" formnovalidate onclick="return confirm('Delete this paper? The PDF goes to the Recycle Bin and the paper leaves library.bib.')" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Delete</button>
       {% endif %}
     </div>
   </form>
