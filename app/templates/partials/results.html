@@ -1,4 +1,4 @@
-<p class="mb-3 text-sm text-slate-500">{{ papers | length }} paper{{ '' if papers | length == 1 else 's' }}</p>
+{% if papers %}<p class="mb-3 text-sm text-slate-500">{{ papers | length }} paper{{ '' if papers | length == 1 else 's' }}</p>{% endif %}
 <ul class="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-800">
   {% for paper, e, ptags in papers %}
   <li class="p-4">
@@ -20,6 +20,6 @@
     </div>
   </li>
   {% else %}
-  <li class="p-8 text-center text-sm text-slate-500">No papers match. New PDFs show up under <a href="/staging" class="underline">Review</a> first.</li>
+  <li class="p-10 text-center text-sm text-slate-500">No papers</li>
   {% endfor %}
 </ul>

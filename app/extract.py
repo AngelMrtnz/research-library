@@ -115,7 +115,7 @@ def heuristic(pdf: bytes, existing_tags: list[str]) -> Extraction:
         entry_type="unpublished" if "arxiv" in ids else "article",
         title=title, authors=authors,
         year=int(years.most_common(1)[0][0]) if years else None,
-        notes="Extracted without AI (no Gemini key): check every field.",
+        notes="No Gemini key: check every field.",
         **ids,
     )
 

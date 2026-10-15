@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-  <input type="search" name="q" value="{{ q }}" autofocus placeholder="Search title, author, year, citation key, tag…"
-         class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 shadow-sm focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800"
+  <div class="relative w-full">
+  <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><path d="m14 14 4 4" stroke-linecap="round"/></svg>
+  <input type="search" name="q" value="{{ q }}" autofocus placeholder="Search"
+         class="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-4 shadow-sm focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800"
          hx-get="/" hx-trigger="input changed delay:200ms, search" hx-target="#results" hx-push-url="true"
          hx-include="#active-tags">
+  </div>
   <a href="/export.bib?{{ export_qs }}" download title="Download BibTeX of the papers shown (all papers when nothing is filtered)"
-     class="shrink-0 self-end rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 sm:self-auto dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">⤓ .bib</a>
+     class="inline-flex shrink-0 items-center gap-1 self-end rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 sm:self-auto dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v10m-4-4 4 4 4-4M4 17h12"/></svg>.bib</a>
 </div>
 <div id="active-tags">{% for t in active %}<input type="hidden" name="tag" value="{{ t }}">{% endfor %}</div>
 
@@ -16,9 +19,9 @@
     {% set others = active | reject('equalto', t.name) | list %}
     <a href="/?{{ {'q': q, 'tag': (others if on else active + [t.name])} | qs }}"
        class="rounded-full px-3 py-0.5 text-xs font-medium ring-1 ring-inset bg-{{ t.color }}-100 text-{{ t.color }}-800 ring-{{ t.color }}-300 dark:bg-{{ t.color }}-900/40 dark:text-{{ t.color }}-200 {{ 'ring-2 ring-' ~ t.color ~ '-600' if on else 'opacity-80 hover:opacity-100' }}">
-      {{ '✓ ' if on }}{{ t.name }} <span class="opacity-60">{{ t.n }}</span></a>
+      {{ t.name }} <span class="opacity-60">{{ t.n }}</span></a>
   {% endfor %}
-  {% if active %}<a href="/?{{ {'q': q} | qs }}" class="px-2 text-xs text-slate-500 underline">clear tags</a>{% endif %}
+  {% if active %}<a href="/?{{ {'q': q} | qs }}" class="px-2 text-xs text-slate-500 hover:text-slate-800">Clear</a>{% endif %}
 </div>
 
 <datalist id="tag-names">{% for t in tags %}<option value="{{ t.name }}">{% endfor %}</datalist>

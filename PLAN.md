@@ -105,6 +105,7 @@ SQLite (+ FTS5) ◄────────────────────�
 - [x] Review page tidy-up: Delete (to trash) instead of Skip, shorter labels; LaTeX math kept in titles and BibTeX, ASCII only in filenames
 - [x] Drag PDFs onto any page; one "Add PDFs" button (no Rescan/Upload); library.bib tab removed, small ".bib" download in Library
 - [x] Scanned PDFs: Gemini told to read the page image when the text layer is empty or garbled
+- [x] Visual pass: no emojis, active nav state, sentence-case labels, fewer words (Billy)
 
 ## Guiding principle
 Minimal, easy and fast to run (Billy). Prefer fewer dependencies, fewer clicks, fewer visible fields.

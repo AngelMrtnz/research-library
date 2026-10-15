@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Review · {{ paper.original_filename }}{% endblock %}
 {% set input = "w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900" %}
-{% set label = "block text-xs font-medium uppercase tracking-wide text-slate-500" %}
+{% set label = "mb-1 block text-xs font-medium text-slate-500" %}
 {% block content %}
 <div class="mb-4 flex flex-wrap items-baseline gap-3">
-  <a href="/staging" class="text-sm text-slate-500 hover:text-blue-600">← Review queue</a>
+  <a href="/staging" class="text-sm text-slate-500 hover:text-blue-600">Review</a><span class="text-slate-300">/</span>
   <h1 class="truncate text-lg font-semibold">{{ paper.original_filename }}</h1>
   <span class="rounded-full px-2 text-xs {{ 'bg-emerald-100 text-emerald-800' if paper.status == 'confirmed' else 'bg-amber-100 text-amber-800' }}">{{ paper.status }}</span>
 </div>
 {% if error %}<div class="mb-4 rounded-md bg-rose-50 px-4 py-2 text-sm text-rose-800">{{ error }}</div>{% endif %}
-{% if paper.notes %}<div class="mb-4 rounded-md bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-100"><b>Check:</b> {{ paper.notes }}</div>{% endif %}
+{% if paper.notes %}<div class="mb-4 rounded-md bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">{{ paper.notes }}</div>{% endif %}
 
 <div class="grid gap-6 lg:grid-cols-2">
   <div class="lg:sticky lg:top-4 lg:self-start">
@@ -51,7 +51,7 @@
       </div>
       {% set ns = namespace(any=false) %}{% for f, l in extra %}{% if e[f] %}{% set ns.any = true %}{% endif %}{% endfor %}
       <details {{ 'open' if ns.any }}>
-        <summary class="cursor-pointer text-xs text-slate-500">More fields (book, publisher, ISBN, note…)</summary>
+        <summary class="cursor-pointer text-xs text-slate-500">More fields</summary>
         <div class="mt-3 grid grid-cols-2 gap-3">
           {% for f, l in extra %}
           <div><label class="{{ label }}">{{ l }}</label><input name="{{ f }}" value="{{ e[f] or '' }}" class="meta {{ input }}"></div>
@@ -61,7 +61,7 @@
     </div>
 
     <div>
-      <label class="{{ label }}">Tags <span class="normal-case text-slate-400">space-separated</span></label>
+      <label class="{{ label }}">Tags</label>
       <input name="tags" value="{{ ptags }}" class="{{ input }}" id="tags-input">
       <div class="mt-1 flex flex-wrap gap-1">
         {% for t in all_tags %}
@@ -76,7 +76,7 @@
     </div>
 
     <div class="flex flex-wrap items-center gap-2 pt-2">
-      <button class="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-500" title="Ctrl+Enter">Confirm &amp; Rename <span class="ml-1 text-xs opacity-70">Ctrl+Enter</span></button>
+      <button class="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-500" title="Ctrl+Enter">Confirm &amp; Rename</button>
       <button formaction="/staging/{{ paper.id }}/save" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Save draft</button>
       {% if paper.status != 'confirmed' %}
       <button formaction="/staging/{{ paper.id }}/rerun" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Re-run AI</button>

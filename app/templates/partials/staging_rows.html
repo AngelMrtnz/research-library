@@ -3,13 +3,13 @@
   {% for paper, e in papers %}
   <li class="flex items-center gap-4 p-4">
     <div class="min-w-0 flex-1">
-      <div class="truncate text-sm text-slate-500">{{ paper.original_filename }}</div>
+      <div class="truncate text-xs text-slate-400">{{ paper.original_filename }}</div>
       {% if paper.status == 'staged' %}
-        <div class="truncate font-medium">→ {{ paper.proposed_filename }}</div>
+        <div class="truncate font-medium">{{ paper.proposed_filename }}</div>
       {% elif paper.status == 'pending' %}
-        <div class="text-sm text-amber-600">Extracting metadata…</div>
+        <div class="text-sm text-amber-600">Reading</div>
       {% else %}
-        <div class="text-sm text-rose-600">Extraction failed: {{ paper.error }}</div>
+        <div class="text-sm text-rose-600">Failed: {{ paper.error }}</div>
       {% endif %}
     </div>
     {% if paper.status != 'pending' %}
@@ -17,7 +17,7 @@
     {% endif %}
   </li>
   {% else %}
-  <li class="m-3 rounded-lg border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-600">Nothing waiting. Drag PDFs here.</li>
+  <li class="m-3 rounded-lg border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-600">Drag PDFs here</li>
   {% endfor %}
 </ul>
 </div>

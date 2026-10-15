@@ -76,9 +76,9 @@ def test_confirm_renames_and_writes_bib(client):
 
     for q in ["vinogradov", "2000", "PV_2000", "lagrang", "geometric"]:
         assert "singular Lagrangians" in client.get("/", params={"q": q}).text, q
-    assert "No papers match" in client.get("/", params={"q": "hamiltonian"}).text
+    assert "No papers" in client.get("/", params={"q": "hamiltonian"}).text
     assert "singular" in client.get("/", params={"tag": "lagrangian"}).text
-    assert "No papers match" in client.get("/", params={"tag": ["lagrangian", "nope"]}).text
+    assert "No papers" in client.get("/", params={"tag": ["lagrangian", "nope"]}).text
     assert "PV_2000" in client.get("/export.bib", params={"tag": "lagrangian"}).text
 
     client.post("/papers/1/undo")
