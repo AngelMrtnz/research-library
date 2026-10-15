@@ -126,3 +126,30 @@ def test_tag_editor_replaces_tags_and_normalizes(client):
     assert "poisson" in {t["name"] for t in r.json()["index"]}
     r = client.post("/papers/1/tags", data={"tags": "poisson"})
     assert r.json()["tags"] == ["poisson"]
+
+
+def test_venue_check_moves_books_and_abbreviates_journals(tmp_path, monkeypatch):
+    from app import services
+    from app.config import Settings
+    from app.extract import Extraction, Venue
+
+    answers = {"Julio Abad, in Memoriam": Venue(kind="book"),
+               "Journal of Geometry and Physics": Venue(kind="journal",
+                                                        abbreviation="J. Geom. Phys.")}
+    calls = []
+    monkeypatch.setattr(services, "check_venue",
+                        lambda name, *_: calls.append(name) or answers[name])
+    lib = services.Library(None, None, Settings(data_dir=tmp_path, gemini_api_key="k"))
+
+    x = Extraction(entry_type="article", title="T", authors=[], year=2008,
+                   journal="Julio Abad, in Memoriam")
+    lib.fix_venue(x)
+    assert (x.entry_type, x.journal, x.booktitle) == ("incollection", "", "Julio Abad, in Memoriam")
+    assert "not a journal" in x.notes
+
+    for _ in range(2):
+        y = Extraction(entry_type="article", title="T", authors=[], year=2000,
+                       journal="Journal of Geometry and Physics")
+        lib.fix_venue(y)
+        assert y.journal == "J. Geom. Phys."
+    assert calls.count("Journal of Geometry and Physics") == 1

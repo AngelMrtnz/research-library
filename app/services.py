@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -17,7 +18,7 @@ from pathlib import Path
 from . import db
 from .bibtex import Entry, render, render_library
 from .config import Settings
-from .extract import Extraction, extract
+from .extract import Extraction, Venue, check_venue, extract
 from .lookup import published_version
 from .names import ascii_fold, build_filename, citation_key, dedupe_filename, unique_key
 from .storage import Storage
@@ -41,6 +42,46 @@ class Library:
     def __init__(self, conn: sqlite3.Connection, storage: Storage, settings: Settings):
         self.conn, self.storage, self.settings = conn, storage, settings
         settings.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._venues_path = settings.data_dir / "venues.json"
+        self._venues_lock = threading.Lock()
+
+    # ---- venues ------------------------------------------------------------
+    def venue(self, name: str) -> Venue:
+        """Is this a real journal, and its ISO 4 abbreviation. Asked once per name."""
+        with self._venues_lock:
+            cache = (json.loads(self._venues_path.read_text(encoding="utf-8"))
+                     if self._venues_path.exists() else {})
+        if name in cache:
+            return Venue(**cache[name])
+        v = check_venue(name, self.settings.gemini_api_key, self.settings.gemini_model)
+        with self._venues_lock:
+            cache = (json.loads(self._venues_path.read_text(encoding="utf-8"))
+                     if self._venues_path.exists() else {})
+            cache[name] = v.model_dump()
+            self._venues_path.write_text(json.dumps(cache, indent=1, ensure_ascii=False),
+                                         encoding="utf-8")
+        return v
+
+    def fix_venue(self, x: Extraction) -> None:
+        """Abbreviate real journals; move books and proceedings out of ``journal``."""
+        try:
+            v = self.venue(x.journal)
+        except Exception as exc:  # noqa: BLE001 - keep the proposal as is
+            log.warning("venue check failed for %r: %s", x.journal, exc)
+            return
+        if v.kind == "journal":
+            if v.abbreviation:
+                x.journal = v.abbreviation
+        elif v.kind in ("book", "proceedings"):
+            x.notes = (f"'{x.journal}' is a {v.kind}, not a journal: saved as "
+                       f"{'a chapter' if v.kind == 'book' else 'a conference paper'}. "
+                       + x.notes).strip()
+            x.booktitle = x.booktitle or x.journal
+            x.journal = ""
+            x.entry_type = "incollection" if v.kind == "book" else "inproceedings"
+        else:
+            x.notes = (f"Could not confirm that '{x.journal}' is a journal. "
+                       + x.notes).strip()
 
     # ---- files -------------------------------------------------------------
     def pdf_bytes(self, file_id: str) -> bytes:
@@ -102,6 +143,8 @@ class Library:
                         self.settings.gemini_api_key, self.settings.gemini_model)
             if self.settings.online_lookup and (not x.journal or x.entry_type == "unpublished"):
                 add_published_version(x)
+            if x.journal and self.settings.gemini_api_key:
+                self.fix_venue(x)
             log.info("done %s in %.1fs", row["original_filename"], time.monotonic() - start)
             return x
         except Exception as exc:  # noqa: BLE001 - shown to the user on the staging page
