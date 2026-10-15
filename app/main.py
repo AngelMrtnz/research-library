@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -43,6 +44,8 @@ templates.env.filters["names"] = lambda authors: ", ".join(
 _conn = db.connect(settings.db_path)
 _library: Library | None = None
 _process_lock = threading.Lock()
+# Last time any page talked to us; app.serve stops the server when no tab is open.
+last_seen = time.monotonic()
 
 
 @app.exception_handler(LoginRequired)
@@ -60,9 +63,16 @@ def get_library(_: str = Depends(require_owner)) -> Library:
 def process_in_background(lib: Library) -> None:
     if _process_lock.acquire(blocking=False):
         try:
-            lib.process_pending()
+            # Keep going while new PDFs arrive during a run.
+            while lib.process_pending():
+                pass
         finally:
             _process_lock.release()
+
+
+def waiting() -> int:
+    return _conn.execute("SELECT COUNT(*) FROM papers WHERE status IN "
+                         "('pending','staged','error')").fetchone()[0]
 
 
 def tag_index() -> list[dict]:
@@ -71,6 +81,7 @@ def tag_index() -> list[dict]:
 
 def page(request: Request, name: str, **ctx) -> HTMLResponse:
     ctx.setdefault("tag_index", tag_index())
+    ctx.setdefault("staged", waiting())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -110,9 +121,7 @@ def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[
     rows = lib.search(q, tags)
     ctx = dict(q=q, active=tags, papers=[(r, entry_dict(r), db.paper_tags(_conn, r["id"]))
                                          for r in rows],
-               tags=db.all_tags(_conn), export_qs=urlencode({"q": q, "tag": tags}, doseq=True),
-               staged=_conn.execute("SELECT COUNT(*) FROM papers WHERE status IN "
-                                    "('pending','staged','error')").fetchone()[0])
+               tags=db.all_tags(_conn), export_qs=urlencode({"q": q, "tag": tags}, doseq=True))
     if request.headers.get("HX-Request") and request.headers.get("HX-Target") == "results":
         return page(request, "partials/results.html", **ctx)
     return page(request, "library.html", **ctx)
@@ -158,6 +167,22 @@ def quit_app(_: Library = Depends(get_library)):
                         "Research Library stopped. Open start.bat to run it again.</body>")
 
 
+@app.middleware("http")
+async def mark_seen(request: Request, call_next):
+    global last_seen
+    last_seen = time.monotonic()
+    return await call_next(request)
+
+
+@app.get("/ping")
+def ping():
+    return Response(status_code=204)
+
+
+def busy() -> bool:
+    return _process_lock.locked()
+
+
 # ---- tags ------------------------------------------------------------------
 @app.get("/tags", response_class=HTMLResponse)
 def tags_page(request: Request, _: Library = Depends(get_library)):
@@ -183,8 +208,9 @@ async def update_tag(request: Request, tag_id: int, _: Library = Depends(get_lib
 @app.get("/staging", response_class=HTMLResponse)
 def staging_page(request: Request, bg: BackgroundTasks, msg: str = "",
                  lib: Library = Depends(get_library)):
-    if not request.headers.get("HX-Request") and lib.scan():
-        bg.add_task(process_in_background, lib)
+    if not request.headers.get("HX-Request"):
+        lib.scan()
+        bg.add_task(process_in_background, lib)  # also picks up anything left pending
     rows = _conn.execute(
         "SELECT * FROM papers WHERE status IN ('pending','staged','error') ORDER BY id"
     ).fetchall()
@@ -203,7 +229,7 @@ def scan(bg: BackgroundTasks, lib: Library = Depends(get_library)):
 
 
 @app.post("/upload")
-async def upload(files: list[UploadFile], bg: BackgroundTasks,
+async def upload(request: Request, files: list[UploadFile], bg: BackgroundTasks,
                  lib: Library = Depends(get_library)):
     n = 0
     for f in files:
@@ -211,6 +237,8 @@ async def upload(files: list[UploadFile], bg: BackgroundTasks,
             lib.upload(f.filename, await f.read())
             n += 1
     bg.add_task(process_in_background, lib)
+    if "application/json" in request.headers.get("accept", ""):
+        return {"added": n, "waiting": waiting()}
     return RedirectResponse(f"/staging?msg=Added+{n}+PDF(s)", status_code=303)
 
 
@@ -225,10 +253,13 @@ def preview(paper_id: int, lib: Library = Depends(get_library)):
 
 
 @app.get("/papers/{paper_id}/file.pdf")
-def pdf(paper_id: int, lib: Library = Depends(get_library)):
+@app.get("/papers/{paper_id}/pdf/{name}")
+def pdf(paper_id: int, name: str = "", lib: Library = Depends(get_library)):
+    """The PDF, shown and saved under its own filename."""
     row = lib.get(paper_id)
+    disposition = f"inline; filename*=UTF-8''{quote(row['filename'])}"
     return Response(lib.pdf_bytes(row["file_id"]), media_type="application/pdf",
-                    headers={"Content-Disposition": "inline"})
+                    headers={"Content-Disposition": disposition})
 
 
 def review_ctx(lib: Library, paper_id: int, error: str = "") -> dict:
@@ -290,6 +321,10 @@ def rerun(paper_id: int, lib: Library = Depends(get_library)):
 
 
 @app.post("/staging/{paper_id}/delete")
-def delete(paper_id: int, lib: Library = Depends(get_library)):
+@app.post("/papers/{paper_id}/delete")
+def delete(request: Request, paper_id: int, lib: Library = Depends(get_library)):
+    confirmed = lib.get(paper_id)["status"] == "confirmed"
     lib.delete(paper_id)
-    return RedirectResponse("/staging", status_code=303)
+    if request.headers.get("HX-Request"):
+        return HTMLResponse("")
+    return RedirectResponse("/" if confirmed else "/staging", status_code=303)

@@ -99,7 +99,7 @@ SQLite (+ FTS5) ◄────────────────────�
 - [ ] First real run on ~10 papers; tune the Gemini prompt against real PDFs
 - [ ] Bulk import of the existing library (papers already named, outside Inbox)
 - [ ] Rebuild DB from `library.bib` (`python -m app.rebuild`) for backups / new machines
-- [ ] Crossref/arXiv API lookup to verify Gemini output by DOI
+- [x] Crossref/arXiv lookup: preprints and papers without a journal get the published version proposed (ONLINE_LOOKUP=0 turns it off)
 - [ ] Settings page to edit house rules without code (threshold, particle rule)
 - [ ] Batch "confirm all reviewed" on the staging list
 - [x] Review page tidy-up: Delete (to trash) instead of Skip, shorter labels; LaTeX math kept in titles and BibTeX, ASCII only in filenames

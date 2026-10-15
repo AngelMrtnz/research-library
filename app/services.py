@@ -10,23 +10,78 @@ import json
 import logging
 import re
 import sqlite3
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import db
 from .bibtex import Entry, render, render_library
 from .config import Settings
-from .extract import Extraction, extract
+from .extract import Extraction, Venue, check_venue, extract
+from .lookup import published_version
 from .names import ascii_fold, build_filename, citation_key, dedupe_filename, unique_key
 from .storage import Storage
 
 log = logging.getLogger(__name__)
 
 
+def add_published_version(x: Extraction) -> None:
+    """Fill journal, volume, pages and DOI from arXiv/Crossref when a published version exists."""
+    found = published_version(x.title, x.authors[0].family if x.authors else "", x.doi, x.arxiv)
+    if not found:
+        return
+    for k, v in found.items():
+        setattr(x, k, v)
+    ref = " ".join(str(found[k]) for k in ("journal", "volume") if found.get(k))
+    x.notes = (f"Published version found online: {ref} ({found.get('year', '')}). "
+               "Check it. " + x.notes).strip()
+
+
 class Library:
     def __init__(self, conn: sqlite3.Connection, storage: Storage, settings: Settings):
         self.conn, self.storage, self.settings = conn, storage, settings
         settings.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._venues_path = settings.data_dir / "venues.json"
+        self._venues_lock = threading.Lock()
+
+    # ---- venues ------------------------------------------------------------
+    def venue(self, name: str) -> Venue:
+        """Is this a real journal, and its ISO 4 abbreviation. Asked once per name."""
+        with self._venues_lock:
+            cache = (json.loads(self._venues_path.read_text(encoding="utf-8"))
+                     if self._venues_path.exists() else {})
+        if name in cache:
+            return Venue(**cache[name])
+        v = check_venue(name, self.settings.gemini_api_key, self.settings.gemini_model)
+        with self._venues_lock:
+            cache = (json.loads(self._venues_path.read_text(encoding="utf-8"))
+                     if self._venues_path.exists() else {})
+            cache[name] = v.model_dump()
+            self._venues_path.write_text(json.dumps(cache, indent=1, ensure_ascii=False),
+                                         encoding="utf-8")
+        return v
+
+    def fix_venue(self, x: Extraction) -> None:
+        """Abbreviate real journals; move books and proceedings out of ``journal``."""
+        try:
+            v = self.venue(x.journal)
+        except Exception as exc:  # noqa: BLE001 - keep the proposal as is
+            log.warning("venue check failed for %r: %s", x.journal, exc)
+            return
+        if v.kind == "journal":
+            if v.abbreviation:
+                x.journal = v.abbreviation
+        elif v.kind in ("book", "proceedings"):
+            x.notes = (f"'{x.journal}' is a {v.kind}, not a journal: saved as "
+                       f"{'a chapter' if v.kind == 'book' else 'a conference paper'}. "
+                       + x.notes).strip()
+            x.booktitle = x.booktitle or x.journal
+            x.journal = ""
+            x.entry_type = "incollection" if v.kind == "book" else "inproceedings"
+        else:
+            x.notes = (f"Could not confirm that '{x.journal}' is a journal. "
+                       + x.notes).strip()
 
     # ---- files -------------------------------------------------------------
     def pdf_bytes(self, file_id: str) -> bytes:
@@ -81,9 +136,17 @@ class Library:
         self._store(paper_id, self._extract(self.get(paper_id), tags))
 
     def _extract(self, row: sqlite3.Row, tags: list[str]) -> Extraction | Exception:
+        start = time.monotonic()
+        log.info("reading %s", row["original_filename"])
         try:
-            return extract(self.pdf_bytes(row["file_id"]), tags,
-                           self.settings.gemini_api_key, self.settings.gemini_model)
+            x = extract(self.pdf_bytes(row["file_id"]), tags,
+                        self.settings.gemini_api_key, self.settings.gemini_model)
+            if self.settings.online_lookup and (not x.journal or x.entry_type == "unpublished"):
+                add_published_version(x)
+            if x.journal and self.settings.gemini_api_key:
+                self.fix_venue(x)
+            log.info("done %s in %.1fs", row["original_filename"], time.monotonic() - start)
+            return x
         except Exception as exc:  # noqa: BLE001 - shown to the user on the staging page
             log.exception("extraction failed for %s", row["original_filename"])
             return exc
@@ -107,7 +170,9 @@ class Library:
              build_filename(entry.year, entry.authors, entry.title), x.notes,
              render(entry), paper_id),
         )
-        db.set_paper_tags(self.conn, paper_id, x.tags + x.new_tags[:2])
+        existing = [t["name"] for t in db.all_tags(self.conn)]
+        db.set_paper_tags(self.conn, paper_id,
+                          [db.match_tag(t, existing) for t in x.tags + x.new_tags[:2]])
         self.conn.commit()
 
     def find_duplicate(self, paper_id: int, title: str, doi: str) -> str | None:
@@ -135,13 +200,15 @@ class Library:
         self.conn.commit()
 
     def delete(self, paper_id: int) -> None:
-        """Send an unconfirmed PDF to the trash and forget it."""
+        """Send the PDF to the trash and forget the paper; drop it from library.bib."""
         row = self.get(paper_id)
-        if row["status"] == "confirmed":
-            raise ValueError("Undo the rename before deleting a confirmed paper.")
         self.storage.trash(row["file_id"])
+        self.conn.execute("DELETE FROM paper_tags WHERE paper_id = ?", (paper_id,))
+        self.conn.execute("DELETE FROM papers_fts WHERE rowid = ?", (paper_id,))
         self.conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         self.conn.commit()
+        if row["status"] == "confirmed":
+            self.write_bib()
 
     # ---- the only writes to storage ---------------------------------------
     def confirm(self, paper_id: int, entry: Entry, filename: str, bibtex: str,

@@ -57,7 +57,14 @@ Rules:
 - Authors exactly in the order printed. Never reorder.
 - Never invent fields. Leave a field empty when it is not on the page.
 - Preprints (arXiv, no journal yet) are entry_type "unpublished".
-- Tags: prefer these existing tags: {tags}. Add at most 2 new tags.
+- journal is only for real periodicals. A chapter in an edited book, memorial volume
+  or Festschrift is "incollection" with the book in booktitle; a conference paper is
+  "inproceedings" with the proceedings in booktitle.
+- Tags: 2-5 topic tags. Existing tags: {tags}.
+  Reuse an existing tag whenever it fits. Create a new tag (at most 2) only for a topic
+  none of them covers, and never a synonym, plural, abbreviation or narrower variant of
+  an existing one (e.g. not "lie-algebroids" when "lie-algebroid" exists). New tags are
+  short lowercase-kebab topics, specific enough to be useful across many papers.
 - Put anything you are unsure of in notes.
 Text layer of the first page, for reference:
 ---
@@ -120,18 +127,15 @@ def heuristic(pdf: bytes, existing_tags: list[str]) -> Extraction:
     )
 
 
-def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> Extraction:
+def _generate(api_key: str, models: str, contents: list, schema: type[BaseModel]) -> BaseModel:
+    """One structured Gemini call, falling back through the model list."""
     from google import genai
     from google.genai import errors, types
 
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
-        retry_options=types.HttpRetryOptions(attempts=2)))
-    prompt = PROMPT.format(tags=", ".join(existing_tags) or "(none yet)",
-                           text=page_text(pdf, 1).strip()[:6000] or "(none: scanned page)")
-    contents = [types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
-                prompt]
+        timeout=90_000, retry_options=types.HttpRetryOptions(attempts=2)))
     config = types.GenerateContentConfig(
-        response_mime_type="application/json", response_schema=Extraction, temperature=0.1,
+        response_mime_type="application/json", response_schema=schema, temperature=0.1,
     )
     names = [m.strip() for m in models.split(",") if m.strip()]
     for i, model in enumerate(names):
@@ -142,11 +146,40 @@ def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> E
             # Busy (429/503) or retired (404) models fall through to the next one.
             if exc.code not in (404, 429, 500, 503) or i == len(names) - 1:
                 raise
-    result = resp.parsed or Extraction.model_validate_json(resp.text)
+    return resp.parsed or schema.model_validate_json(resp.text)
+
+
+def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> Extraction:
+    from google.genai import types
+
+    prompt = PROMPT.format(tags=", ".join(existing_tags) or "(none yet)",
+                           text=page_text(pdf, 1).strip()[:6000] or "(none: scanned page)")
+    contents = [types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
+                prompt]
+    result = _generate(api_key, models, contents, Extraction)
     # Identifiers found in the text layer beat the model's reading of them.
     for k, v in _identifiers(page_text(pdf)).items():
         setattr(result, k, getattr(result, k) or v)
     return result
+
+
+class Venue(BaseModel):
+    kind: str = Field(description="journal (a real periodical), proceedings (conference "
+                      "proceedings volume), book (edited book, festschrift, memorial volume, "
+                      "lecture notes), or unknown")
+    abbreviation: str = Field("", description="For a journal: its official ISO 4 "
+                              "abbreviation, e.g. 'J. Geom. Phys.'. Empty otherwise.")
+    name: str = Field("", description="Full canonical name of the venue")
+
+
+VENUE_PROMPT = """Is "{name}" an academic journal (a periodical with volumes and issues)?
+Use your knowledge of real journals. Memorial volumes ("in Memoriam"), Festschrifts,
+edited books and lecture-note volumes are books, not journals. If it is a journal, give
+its ISO 4 abbreviation (keep it if "{name}" already is one). Do not invent journals."""
+
+
+def check_venue(name: str, api_key: str, models: str) -> Venue:
+    return _generate(api_key, models, [VENUE_PROMPT.format(name=name)], Venue)
 
 
 def extract(pdf: bytes, existing_tags: list[str], api_key: str, model: str) -> Extraction:
