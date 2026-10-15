@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -43,6 +44,8 @@ templates.env.filters["names"] = lambda authors: ", ".join(
 _conn = db.connect(settings.db_path)
 _library: Library | None = None
 _process_lock = threading.Lock()
+# Last time any page talked to us; app.serve stops the server when no tab is open.
+last_seen = time.monotonic()
 
 
 @app.exception_handler(LoginRequired)
@@ -162,6 +165,22 @@ def quit_app(_: Library = Depends(get_library)):
     threading.Timer(0.5, os._exit, args=(0,)).start()
     return HTMLResponse('<body style="font:14px system-ui;color:#64748b;padding:3rem">'
                         "Research Library stopped. Open start.bat to run it again.</body>")
+
+
+@app.middleware("http")
+async def mark_seen(request: Request, call_next):
+    global last_seen
+    last_seen = time.monotonic()
+    return await call_next(request)
+
+
+@app.get("/ping")
+def ping():
+    return Response(status_code=204)
+
+
+def busy() -> bool:
+    return _process_lock.locked()
 
 
 # ---- tags ------------------------------------------------------------------

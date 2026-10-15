@@ -53,6 +53,9 @@
       toast.classList.replace("hidden", "flex");
       if (ms) toastTimer = setTimeout(() => toast.classList.replace("flex", "hidden"), ms);
     }
+    // Tell the server a tab is open; it stops by itself a few minutes after the last one closes.
+    setInterval(() => fetch("/ping").catch(() =>
+      notify("The app has stopped. Open start.bat to start it again.")), 30000);
     const plural = (n) => `${n} PDF${n === 1 ? "" : "s"}`;
     async function uploadPdfs(files) {
       show(false);
