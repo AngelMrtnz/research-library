@@ -13,7 +13,7 @@ if not exist .venv (
   py -3 -m venv .venv
 )
 .venv\Scripts\python -m pip install -q --disable-pip-version-check -r requirements.txt
-if not exist .env copy .env.local.example .env >nul
+if not exist config.env copy config.env.example config.env >nul
 .venv\Scripts\python -m app.check || (pause & exit /b 1)
 start "" http://localhost:8000/staging
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000

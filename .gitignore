@@ -2,5 +2,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .env
+config.env
 data/
 node_modules/
