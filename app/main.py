@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from urllib.parse import urlencode
@@ -33,6 +34,7 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 setup_oauth()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.globals["auth_on"] = not settings.auth_disabled
+templates.env.globals["local"] = settings.storage == "local"
 templates.env.filters["qs"] = lambda d: urlencode(d, doseq=True)
 templates.env.filters["tex"] = to_unicode
 templates.env.filters["names"] = lambda authors: ", ".join(
@@ -146,6 +148,14 @@ async def edit_tags(request: Request, paper_id: int, lib: Library = Depends(get_
 def undo(paper_id: int, lib: Library = Depends(get_library)):
     lib.undo(paper_id)
     return RedirectResponse(f"/staging/{paper_id}", status_code=303)
+
+
+@app.post("/quit", response_class=HTMLResponse)
+def quit_app(_: Library = Depends(get_library)):
+    """Stop the background server started by start.bat."""
+    threading.Timer(0.5, os._exit, args=(0,)).start()
+    return HTMLResponse('<body style="font:14px system-ui;color:#64748b;padding:3rem">'
+                        "Research Library stopped. Open start.bat to run it again.</body>")
 
 
 # ---- tags ------------------------------------------------------------------

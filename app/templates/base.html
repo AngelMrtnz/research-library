@@ -18,7 +18,8 @@
       {{ nav("/", "Library", path == "/") }}
       {% call nav("/staging", "Review", path.startswith("/staging")) %}{% if staged %}<span class="rounded-full bg-blue-600 px-1.5 text-xs font-medium text-white">{{ staged }}</span>{% endif %}{% endcall %}
       {{ nav("/tags", "Tags", path == "/tags") }}
-      {% if auth_on %}<a href="/logout" class="ml-auto text-slate-500 hover:text-slate-800 dark:hover:text-white">Sign out</a>{% endif %}
+      {% if local %}<form method="post" action="/quit" class="ml-auto"><button class="text-slate-400 hover:text-slate-800 dark:hover:text-white">Quit</button></form>{% endif %}
+      {% if auth_on %}<a href="/logout" class="{{ '' if local else 'ml-auto' }} text-slate-500 hover:text-slate-800 dark:hover:text-white">Sign out</a>{% endif %}
     </nav>
   </header>
   <main class="mx-auto max-w-6xl px-4 py-6">
