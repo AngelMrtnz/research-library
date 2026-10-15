@@ -228,7 +228,9 @@ def tags_page(request: Request, _: Library = Depends(get_library)):
 async def update_tag(request: Request, tag_id: int, lib: Library = Depends(get_library)):
     form = await request.form()
     with lib.lock:
-        if form.get("delete"):
+        if form.get("merge_into"):
+            db.merge_tag(_conn, tag_id, str(form["merge_into"]))
+        elif form.get("delete"):
             affected = [r[0] for r in _conn.execute(
                 "SELECT paper_id FROM paper_tags WHERE tag_id = ?", (tag_id,))]
             _conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))

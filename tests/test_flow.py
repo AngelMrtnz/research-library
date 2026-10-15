@@ -256,3 +256,18 @@ def test_library_tag_row_follows_the_papers_shown(client):
     assert "Papers tagged" in filtered and "Clear filters" in filtered
     assert "No papers" in client.get("/", params={"q": "hamiltonian"}).text
     assert 'id="tag-row"' not in client.get("/", params={"q": "hamiltonian"}).text
+
+
+def test_merge_tag_moves_papers_and_deletes_it(client):
+    import app.main as main
+    client.post("/scan")
+    client.post("/papers/1/tags", data={"tags": "control-systems"})
+    old = main._conn.execute("SELECT id FROM tags WHERE name = 'control-systems'").fetchone()[0]
+    main.db.ensure_tag(main._conn, "control-theory")
+    main._conn.commit()
+    assert "merge into" in client.get("/tags").text
+    client.post(f"/tags/{old}", data={"merge_into": "control-theory"})
+    r = client.post("/papers/1/tags", data={"tags": "control-theory"})
+    names = {t["name"] for t in r.json()["index"]}
+    assert "control-systems" not in names and "control-theory" in names
+    assert [t["name"] for t in main.db.paper_tags(main._conn, 1)] == ["control-theory"]

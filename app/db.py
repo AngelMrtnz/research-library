@@ -109,6 +109,20 @@ def paper_tags(conn: sqlite3.Connection, paper_id: int) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def merge_tag(conn: sqlite3.Connection, tag_id: int, into: str) -> None:
+    """Give every paper with ``tag_id`` the tag ``into`` instead, then delete ``tag_id``."""
+    target = ensure_tag(conn, into)
+    if target == tag_id:
+        return
+    papers = [r[0] for r in conn.execute(
+        "SELECT paper_id FROM paper_tags WHERE tag_id = ?", (tag_id,))]
+    conn.executemany("INSERT OR IGNORE INTO paper_tags VALUES (?, ?)",
+                     [(p, target) for p in papers])
+    conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+    for p in papers:
+        reindex(conn, p)
+
+
 def all_tags(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT t.*, COUNT(p.id) AS n FROM tags t "
