@@ -18,10 +18,23 @@ from . import db
 from .bibtex import Entry, render, render_library
 from .config import Settings
 from .extract import Extraction, extract
+from .lookup import published_version
 from .names import ascii_fold, build_filename, citation_key, dedupe_filename, unique_key
 from .storage import Storage
 
 log = logging.getLogger(__name__)
+
+
+def add_published_version(x: Extraction) -> None:
+    """Fill journal, volume, pages and DOI from arXiv/Crossref when a published version exists."""
+    found = published_version(x.title, x.authors[0].family if x.authors else "", x.doi, x.arxiv)
+    if not found:
+        return
+    for k, v in found.items():
+        setattr(x, k, v)
+    ref = " ".join(str(found[k]) for k in ("journal", "volume") if found.get(k))
+    x.notes = (f"Published version found online: {ref} ({found.get('year', '')}). "
+               "Check it. " + x.notes).strip()
 
 
 class Library:
@@ -87,6 +100,8 @@ class Library:
         try:
             x = extract(self.pdf_bytes(row["file_id"]), tags,
                         self.settings.gemini_api_key, self.settings.gemini_model)
+            if self.settings.online_lookup and (not x.journal or x.entry_type == "unpublished"):
+                add_published_version(x)
             log.info("done %s in %.1fs", row["original_filename"], time.monotonic() - start)
             return x
         except Exception as exc:  # noqa: BLE001 - shown to the user on the staging page

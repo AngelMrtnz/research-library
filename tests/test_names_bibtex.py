@@ -163,3 +163,21 @@ def test_new_tags_snap_to_existing_variants():
     assert match_tag("Lie Algebroids", existing) == "lie-algebroid"
     assert match_tag("poisson_geometry", existing) == "poisson-geometry"
     assert match_tag("contact-manifolds", existing) == "contact-manifolds"
+
+
+def test_published_version_from_crossref_item():
+    from app.lookup import fields_from, journal_name, pick
+
+    item = {"title": ["On the geometry of singular Lagrangians"],
+            "author": [{"family": "Pugliese"}, {"family": "Vinogradov"}],
+            "container-title": ["Journal of Geometry and Physics"],
+            "short-container-title": ["Journal of Geometry and Physics"],
+            "volume": "35", "issue": "1", "page": "35-55", "DOI": "10.1016/S0393-0440(99)00076-5",
+            "issued": {"date-parts": [[2000, 6]]}, "type": "journal-article"}
+    other = dict(item, title=["Something else entirely"])
+    assert pick([other, item], "On the Geometry of Singular Lagrangians.", "Pugliese") is item
+    assert pick([item], "On the geometry of singular Lagrangians", "Vinogradov") is None
+    assert journal_name(item, "J. Geom. Phys. 35 (2000) 35-55") == "J. Geom. Phys."
+    f = fields_from(item)
+    assert f["year"] == 2000 and f["volume"] == "35" and f["number"] == "1"
+    assert f["entry_type"] == "article" and f["pages"] == "35-55"

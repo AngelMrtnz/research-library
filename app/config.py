@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     local_inbox_dir: Path = Path("data/library/Inbox")
 
     gemini_api_key: str = ""
+    # Look up the published version (journal, volume, pages, DOI) on arXiv and Crossref.
+    online_lookup: bool = True
     # Comma-separated; later models are tried when one is busy or retired.
     gemini_model: str = "gemini-3.5-flash,gemini-flash-latest,gemini-3.1-flash-lite"
 

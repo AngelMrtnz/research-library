@@ -26,7 +26,7 @@ def client(tmp_path, monkeypatch):
              "Fabrizio Pugliese and Alexandre M. Vinogradov")
     env = {"AUTH_DISABLED": "1", "STORAGE": "local", "GEMINI_API_KEY": "",
            "DATA_DIR": str(tmp_path / "data"), "LOCAL_LIBRARY_DIR": str(lib),
-           "LOCAL_INBOX_DIR": str(inbox)}
+           "LOCAL_INBOX_DIR": str(inbox), "ONLINE_LOOKUP": "0"}
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     from app import config
