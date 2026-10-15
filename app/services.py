@@ -189,6 +189,8 @@ class Library:
             self._store_locked(paper_id, x)
 
     def _store_locked(self, paper_id: int, x: Extraction | Exception) -> None:
+        if not self.conn.execute("SELECT 1 FROM papers WHERE id = ?", (paper_id,)).fetchone():
+            return  # deleted while it was being read
         if isinstance(x, Exception):
             self.conn.execute("UPDATE papers SET status = 'error', error = ? WHERE id = ?",
                               (str(x)[:500], paper_id))
@@ -196,7 +198,7 @@ class Library:
             return
         if dup := self.find_duplicate(paper_id, x.title, x.doi):
             x.notes = (f"Possible duplicate of {dup}. " + x.notes).strip()
-        fields = x.model_dump(exclude={"tags", "new_tags", "notes"})
+        fields = x.model_dump(exclude={"tags", "new_tags", "notes", "needs_more_pages"})
         entry = Entry(key=unique_key(citation_key(x.authors, x.year),
                                      self.taken_keys(exclude=paper_id)), **fields)
         self.conn.execute(
@@ -249,6 +251,15 @@ class Library:
             self.conn.commit()
             if row["status"] == "confirmed":
                 self.write_bib()
+
+    def delete_all_in_review(self) -> int:
+        """Delete every paper waiting in Review (the Delete all button)."""
+        with self.lock:
+            ids = [r[0] for r in self.conn.execute(
+                "SELECT id FROM papers WHERE status IN ('pending', 'staged', 'error')")]
+            for paper_id in ids:
+                self.delete(paper_id)
+        return len(ids)
 
     # ---- the only writes to storage ---------------------------------------
     def confirm(self, paper_id: int, entry: Entry, filename: str, bibtex: str,

@@ -20,4 +20,10 @@
   <li class="m-3 rounded-lg border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-600">Drag PDFs here</li>
   {% endfor %}
 </ul>
+{% if papers %}
+<form method="post" action="/staging/delete-all" class="mt-3 text-right"
+      onsubmit="return confirm('Delete all {{ papers | length }} PDF(s) in Review? They move to Papers/_Deleted.')">
+  <button class="text-xs text-slate-400 hover:text-rose-600">Delete all</button>
+</form>
+{% endif %}
 </div>

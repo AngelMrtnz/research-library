@@ -187,3 +187,41 @@ def test_online_lookup_only_for_articles_and_preprints(client, monkeypatch):
         client.post("/scan")
         lib._extract(lib.get(1), [])
         assert len(calls) == n, kind
+
+
+def test_delete_all_in_review(client):
+    import shutil
+    shutil.copy(client.inbox / "scan_0042.pdf", client.inbox / "copy.pdf")
+    assert "Delete all" in client.get("/staging").text
+    r = client.post("/staging/delete-all", follow_redirects=False)
+    assert r.status_code == 303 and "Deleted+2" in r.headers["location"]
+    assert not list(client.inbox.glob("*.pdf"))
+    assert len(list((client.lib_dir / "_Deleted").glob("*.pdf"))) == 2
+    assert "Delete all" not in client.get("/staging").text
+
+
+def test_gemini_reads_more_pages_only_when_needed(monkeypatch, tmp_path):
+    import pymupdf
+
+    from app import extract
+
+    doc = pymupdf.open()
+    for i in range(10):
+        doc.new_page().insert_text((72, 100), f"page {i}")
+    pdf = doc.tobytes()
+    asked = []
+
+    def fake(pdf, pages, *a):
+        asked.append(pages)
+        return extract.Extraction(entry_type="book", title="T", year=2000, authors=[],
+                                  needs_more_pages=pages == 1)
+    monkeypatch.setattr(extract, "_ask_gemini", fake)
+    extract.gemini(pdf, [], "key", "m")
+    assert asked == [1, extract.MORE_PAGES]
+
+    asked.clear()
+    monkeypatch.setattr(extract, "_ask_gemini", lambda pdf, pages, *a: asked.append(pages)
+                        or extract.Extraction(entry_type="article", title="T", year=2000,
+                                              authors=[extract.parse_author("A B")]))
+    extract.gemini(pdf, [], "key", "m")
+    assert asked == [1]

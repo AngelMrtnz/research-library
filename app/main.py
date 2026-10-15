@@ -354,6 +354,12 @@ def rerun(paper_id: int, lib: Library = Depends(get_library)):
     return RedirectResponse(f"/staging/{paper_id}", status_code=303)
 
 
+@app.post("/staging/delete-all")
+def delete_all(lib: Library = Depends(get_library)):
+    n = lib.delete_all_in_review()
+    return RedirectResponse(f"/staging?msg=Deleted+{n}+PDF(s)", status_code=303)
+
+
 @app.post("/staging/{paper_id}/delete")
 @app.post("/papers/{paper_id}/delete")
 def delete(request: Request, paper_id: int, lib: Library = Depends(get_library)):

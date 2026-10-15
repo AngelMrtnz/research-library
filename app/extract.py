@@ -48,15 +48,19 @@ class Extraction(BaseModel):
     new_tags: list[str] = Field(default_factory=list, description="At most 2 new "
                                 "lowercase-kebab tags, only if no existing tag fits")
     notes: str = Field("", description="Anything uncertain or guessed, for the reviewer")
+    needs_more_pages: bool = Field(False, description="True when these pages do not show "
+                                   "the title, all authors and the year, e.g. a cover, a "
+                                   "journal front page, or a book whose publisher, year "
+                                   "and ISBN are on a later copyright page")
 
 
 PROMPT = """You catalogue academic papers for a personal library (mostly mathematics and
-mathematical physics). From the attached first page, extract citation metadata.
-Read the page itself (it may be a scan or a photo): the text layer below can be empty,
-garbled or missing symbols, so trust what you see on the page over it.
+mathematical physics). From the attached {pages}, extract citation metadata.
+Read the pages themselves (they may be scans or photos): the text layer below can be
+empty, garbled or missing symbols, so trust what you see over it.
 Rules:
 - Authors exactly in the order printed. Never reorder.
-- Never invent fields. Leave a field empty when it is not on the page.
+- Never invent fields. Leave a field empty when it is not on the pages.
 - Preprints (arXiv, no journal yet) are entry_type "unpublished".
 - journal is only for real periodicals. A chapter in an edited book, memorial volume
   or Festschrift is "incollection" with the book in booktitle; a conference paper is
@@ -67,7 +71,7 @@ Rules:
   an existing one (e.g. not "lie-algebroids" when "lie-algebroid" exists). New tags are
   short lowercase-kebab topics, specific enough to be useful across many papers.
 - Put anything you are unsure of in notes.
-Text layer of the first page, for reference:
+Text layer, for reference:
 ---
 {text}
 ---"""
@@ -78,6 +82,11 @@ def first_pages(pdf: bytes, n: int = 1) -> bytes:
         out = pymupdf.open()
         out.insert_pdf(doc, from_page=0, to_page=min(n, doc.page_count) - 1)
         return out.tobytes()
+
+
+def page_count(pdf: bytes) -> int:
+    with pymupdf.open(stream=pdf, filetype="pdf") as doc:
+        return doc.page_count
 
 
 def page_text(pdf: bytes, pages: int = 2) -> str:
@@ -158,14 +167,33 @@ def _generate(api_key: str, models: str, contents: list, schema: type[BaseModel]
     return resp.parsed or schema.model_validate_json(resp.text)
 
 
-def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> Extraction:
+# Read page one first (fast); read this many when page one is not enough.
+MORE_PAGES = 6
+
+
+def incomplete(x: Extraction) -> bool:
+    """Page one was not enough: the model says so, or key fields are missing."""
+    book_details = x.entry_type in ("book", "phdthesis") and not (x.publisher or x.isbn)
+    return x.needs_more_pages or not (x.title and x.authors and x.year) or book_details
+
+
+def _ask_gemini(pdf: bytes, pages: int, existing_tags: list[str], api_key: str,
+                models: str) -> Extraction:
     from google.genai import types
 
-    prompt = PROMPT.format(tags=", ".join(existing_tags) or "(none yet)",
-                           text=page_text(pdf, 1).strip()[:6000] or "(none: scanned page)")
-    contents = [types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
-                prompt]
-    result = _generate(api_key, models, contents, Extraction)
+    prompt = PROMPT.format(
+        pages="first page" if pages == 1 else f"first {pages} pages",
+        tags=", ".join(existing_tags) or "(none yet)",
+        text=page_text(pdf, pages).strip()[:6000 * pages] or "(none: scanned pages)")
+    contents = [types.Part.from_bytes(data=first_pages(pdf, pages),
+                                      mime_type="application/pdf"), prompt]
+    return _generate(api_key, models, contents, Extraction)
+
+
+def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> Extraction:
+    result = _ask_gemini(pdf, 1, existing_tags, api_key, models)
+    if incomplete(result) and page_count(pdf) > 1:
+        result = _ask_gemini(pdf, MORE_PAGES, existing_tags, api_key, models)
     # Identifiers found in the text layer beat the model's reading of them.
     for k, v in _identifiers(page_text(pdf)).items():
         setattr(result, k, getattr(result, k) or v)
