@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+  <input type="search" name="q" value="{{ q }}" autofocus placeholder="Search title, author, year, citation key, tag…"
+         class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 shadow-sm focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800"
+         hx-get="/" hx-trigger="input changed delay:200ms, search" hx-target="#results" hx-push-url="true"
+         hx-include="#active-tags">
+  <a href="/export.bib?{{ export_qs }}" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Export these as .bib</a>
+</div>
+<div id="active-tags">{% for t in active %}<input type="hidden" name="tag" value="{{ t }}">{% endfor %}</div>
+
+<div class="mt-4 flex flex-wrap gap-2">
+  {% for t in tags %}
+    {% set on = t.name in active %}
+    {% set others = active | reject('equalto', t.name) | list %}
+    <a href="/?{{ {'q': q, 'tag': (others if on else active + [t.name])} | qs }}"
+       class="rounded-full px-3 py-0.5 text-xs font-medium ring-1 ring-inset bg-{{ t.color }}-100 text-{{ t.color }}-800 ring-{{ t.color }}-300 dark:bg-{{ t.color }}-900/40 dark:text-{{ t.color }}-200 {{ 'ring-2 ring-' ~ t.color ~ '-600' if on else 'opacity-80 hover:opacity-100' }}">
+      {{ '✓ ' if on }}{{ t.name }} <span class="opacity-60">{{ t.n }}</span></a>
+  {% endfor %}
+  {% if active %}<a href="/?{{ {'q': q} | qs }}" class="px-2 text-xs text-slate-500 underline">clear tags</a>{% endif %}
+</div>
+
+<datalist id="tag-names">{% for t in tags %}<option value="{{ t.name }}">{% endfor %}</datalist>
+<div id="results" class="mt-6">{% include "partials/results.html" %}</div>
+{% endblock %}

@@ -1,0 +1,176 @@
+"""Ingestion, review and confirmation.
+
+The one rule that matters: files are renamed and library.bib is written only in
+``confirm`` (and ``undo``), which run only when the owner clicks a button.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sqlite3
+from pathlib import Path
+
+from . import db
+from .bibtex import Entry, render, render_library
+from .config import Settings
+from .extract import extract
+from .names import build_filename, citation_key, dedupe_filename, unique_key
+from .storage import Storage
+
+log = logging.getLogger(__name__)
+
+
+class Library:
+    def __init__(self, conn: sqlite3.Connection, storage: Storage, settings: Settings):
+        self.conn, self.storage, self.settings = conn, storage, settings
+        settings.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- files -------------------------------------------------------------
+    def pdf_bytes(self, file_id: str) -> bytes:
+        path: Path = self.settings.cache_dir / f"{file_id}.pdf"
+        if not path.exists():
+            path.write_bytes(self.storage.download(file_id))
+        return path.read_bytes()
+
+    def get(self, paper_id: int) -> sqlite3.Row:
+        row = self.conn.execute("SELECT * FROM papers WHERE id = ?", (paper_id,)).fetchone()
+        if row is None:
+            raise KeyError(paper_id)
+        return row
+
+    def taken_keys(self, exclude: int | None = None) -> set[str]:
+        rows = self.conn.execute(
+            "SELECT id, entry_json FROM papers WHERE status IN ('staged', 'confirmed') "
+            "AND entry_json IS NOT NULL"
+        ).fetchall()
+        return {json.loads(r["entry_json"])["key"] for r in rows if r["id"] != exclude}
+
+    # ---- ingestion (read-only on storage) ---------------------------------
+    def register(self, file_id: str, name: str) -> bool:
+        cur = self.conn.execute(
+            "INSERT OR IGNORE INTO papers (file_id, original_filename, filename) "
+            "VALUES (?, ?, ?)", (file_id, name, name),
+        )
+        self.conn.commit()
+        return cur.rowcount == 1
+
+    def scan(self) -> int:
+        return sum(self.register(f.id, f.name) for f in self.storage.list_new_pdfs())
+
+    def upload(self, name: str, data: bytes) -> None:
+        f = self.storage.save_upload(name, data)
+        self.register(f.id, f.name)
+
+    def process_pending(self) -> int:
+        rows = self.conn.execute("SELECT id FROM papers WHERE status = 'pending'").fetchall()
+        for row in rows:
+            self.propose(row["id"])
+        return len(rows)
+
+    def propose(self, paper_id: int) -> None:
+        """Run extraction and stage the proposal. Never touches the file."""
+        row = self.get(paper_id)
+        tags = [t["name"] for t in db.all_tags(self.conn)]
+        try:
+            x = extract(self.pdf_bytes(row["file_id"]), tags,
+                        self.settings.gemini_api_key, self.settings.gemini_model)
+        except Exception as exc:  # noqa: BLE001 - shown to the user on the staging page
+            log.exception("extraction failed for %s", row["original_filename"])
+            self.conn.execute("UPDATE papers SET status = 'error', error = ? WHERE id = ?",
+                              (str(exc)[:500], paper_id))
+            self.conn.commit()
+            return
+        fields = x.model_dump(exclude={"tags", "new_tags", "notes"})
+        entry = Entry(key=unique_key(citation_key(x.authors, x.year),
+                                     self.taken_keys(exclude=paper_id)), **fields)
+        self.conn.execute(
+            "UPDATE papers SET status = 'staged', entry_json = ?, proposal_json = ?, "
+            "proposed_filename = ?, notes = ?, error = NULL, bibtex = ?, bibtex_override = 0 "
+            "WHERE id = ?",
+            (entry.model_dump_json(), x.model_dump_json(),
+             build_filename(entry.year, entry.authors, entry.title), x.notes,
+             render(entry), paper_id),
+        )
+        db.set_paper_tags(self.conn, paper_id, x.tags + x.new_tags[:2])
+        self.conn.commit()
+
+    def save_draft(self, paper_id: int, entry: Entry, filename: str, bibtex: str,
+                   tags: list[str]) -> None:
+        override = bibtex.strip() != render(entry).strip()
+        self.conn.execute(
+            "UPDATE papers SET entry_json = ?, proposed_filename = ?, bibtex = ?, "
+            "bibtex_override = ? WHERE id = ?",
+            (entry.model_dump_json(), filename, bibtex.strip(), int(override), paper_id),
+        )
+        db.set_paper_tags(self.conn, paper_id, tags)
+        self.conn.commit()
+
+    def skip(self, paper_id: int) -> None:
+        self.conn.execute("UPDATE papers SET status = 'skipped' WHERE id = ?", (paper_id,))
+        self.conn.commit()
+
+    # ---- the only writes to storage ---------------------------------------
+    def confirm(self, paper_id: int, entry: Entry, filename: str, bibtex: str,
+                tags: list[str]) -> str:
+        """Rename the file, then record it and rewrite library.bib."""
+        row = self.get(paper_id)
+        if entry.key in self.taken_keys(exclude=paper_id):
+            raise ValueError(f"Citation key {entry.key} is already used.")
+        if not filename.lower().endswith(".pdf"):
+            filename += ".pdf"
+        names = self.storage.list_library_names()
+        if row["status"] == "confirmed":
+            names.discard(row["filename"])
+        filename = dedupe_filename(filename, names)
+        self.storage.rename(row["file_id"], filename, to_library=True)
+        self.save_draft(paper_id, entry, filename, bibtex, tags)
+        self.conn.execute(
+            "UPDATE papers SET status = 'confirmed', filename = ?, "
+            "confirmed_at = CURRENT_TIMESTAMP WHERE id = ?", (filename, paper_id),
+        )
+        db.reindex(self.conn, paper_id)
+        self.conn.commit()
+        self.write_bib()
+        return filename
+
+    def undo(self, paper_id: int) -> None:
+        row = self.get(paper_id)
+        self.storage.rename(row["file_id"], row["original_filename"], to_library=False)
+        self.conn.execute(
+            "UPDATE papers SET status = 'staged', filename = original_filename, "
+            "confirmed_at = NULL WHERE id = ?", (paper_id,),
+        )
+        db.reindex(self.conn, paper_id)
+        self.conn.commit()
+        self.write_bib()
+
+    def write_bib(self) -> None:
+        self.storage.write_bib(self.bib_text())
+
+    def bib_text(self, paper_ids: list[int] | None = None) -> str:
+        rows = self.conn.execute(
+            "SELECT id, bibtex, entry_json FROM papers WHERE status = 'confirmed'"
+        ).fetchall()
+        if paper_ids is not None:
+            wanted = set(paper_ids)
+            rows = [r for r in rows if r["id"] in wanted]
+        rows.sort(key=lambda r: json.loads(r["entry_json"])["key"].lower())
+        return render_library([r["bibtex"] for r in rows]) if rows else ""
+
+    # ---- search -------------------------------------------------------------
+    def search(self, q: str = "", tags: list[str] | None = None) -> list[sqlite3.Row]:
+        sql = "SELECT p.* FROM papers p"
+        args: list = []
+        where = ["p.status = 'confirmed'"]
+        if q.strip():
+            sql += " JOIN papers_fts f ON f.rowid = p.id"
+            where.append("papers_fts MATCH ?")
+            args.append(db.fts_query(q))
+        for t in tags or []:
+            where.append("EXISTS (SELECT 1 FROM paper_tags pt JOIN tags t ON t.id = pt.tag_id "
+                         "WHERE pt.paper_id = p.id AND t.name = ?)")
+            args.append(t)
+        sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY f.rank" if q.strip() else " ORDER BY p.confirmed_at DESC"
+        return self.conn.execute(sql, args).fetchall()

@@ -1,0 +1,23 @@
+<div {% if busy %}hx-get="/staging" hx-trigger="every 3s" hx-target="#rows" hx-swap="innerHTML"{% endif %}>
+<ul class="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-800">
+  {% for paper, e in papers %}
+  <li class="flex items-center gap-4 p-4">
+    <div class="min-w-0 flex-1">
+      <div class="truncate text-sm text-slate-500">{{ paper.original_filename }}</div>
+      {% if paper.status == 'staged' %}
+        <div class="truncate font-medium">→ {{ paper.proposed_filename }}</div>
+      {% elif paper.status == 'pending' %}
+        <div class="text-sm text-amber-600">Extracting metadata…</div>
+      {% else %}
+        <div class="text-sm text-rose-600">Extraction failed: {{ paper.error }}</div>
+      {% endif %}
+    </div>
+    {% if paper.status != 'pending' %}
+    <a href="/staging/{{ paper.id }}" class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500">Review</a>
+    {% endif %}
+  </li>
+  {% else %}
+  <li class="p-8 text-center text-sm text-slate-500">Nothing waiting. Drop PDFs into the Inbox folder and click <b>Scan inbox</b>, or upload them here.</li>
+  {% endfor %}
+</ul>
+</div>

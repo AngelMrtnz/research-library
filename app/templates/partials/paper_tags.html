@@ -1,0 +1,12 @@
+<div class="flex flex-wrap items-center gap-1">
+  {% for t in ptags %}
+  <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs bg-{{ t.color }}-100 text-{{ t.color }}-800 dark:bg-{{ t.color }}-900/40 dark:text-{{ t.color }}-200">
+    <a href="/?tag={{ t.name | urlencode }}">{{ t.name }}</a>
+    <button class="opacity-50 hover:opacity-100" title="Remove tag"
+            hx-post="/papers/{{ paper.id }}/tags" hx-vals='{"remove": "{{ t.name }}"}' hx-target="#tags-{{ paper.id }}">×</button>
+  </span>
+  {% endfor %}
+  <form hx-post="/papers/{{ paper.id }}/tags" hx-target="#tags-{{ paper.id }}" class="inline">
+    <input name="add" placeholder="+ tag" list="tag-names" class="w-20 rounded border border-transparent bg-transparent px-1 text-xs focus:border-slate-300 focus:outline-none">
+  </form>
+</div>

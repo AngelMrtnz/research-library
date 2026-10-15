@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Tags · Research Library{% endblock %}
+{% block content %}
+<h1 class="mb-4 text-xl font-semibold">Tags</h1>
+<ul class="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-800">
+  {% for t in tags %}
+  <li class="flex flex-wrap items-center gap-3 p-3">
+    <a href="/?tag={{ t.name | urlencode }}" class="rounded-full px-3 py-0.5 text-sm bg-{{ t.color }}-100 text-{{ t.color }}-800 dark:bg-{{ t.color }}-900/40 dark:text-{{ t.color }}-200">{{ t.name }}</a>
+    <span class="text-xs text-slate-500">{{ t.n }} paper{{ '' if t.n == 1 else 's' }}</span>
+    <form method="post" action="/tags/{{ t.id }}" class="ml-auto flex items-center gap-1">
+      {% for c in palette %}
+      <button name="color" value="{{ c }}" title="{{ c }}" class="h-5 w-5 rounded-full bg-{{ c }}-400 {{ 'ring-2 ring-offset-1 ring-slate-800 dark:ring-white' if c == t.color }}"></button>
+      {% endfor %}
+      <button name="delete" value="1" class="ml-3 text-xs text-slate-400 hover:text-rose-600" onclick="return confirm('Delete tag {{ t.name }}?')">delete</button>
+    </form>
+  </li>
+  {% else %}
+  <li class="p-8 text-center text-sm text-slate-500">No tags yet. They are created as you confirm papers.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
