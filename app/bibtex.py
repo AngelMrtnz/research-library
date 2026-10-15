@@ -6,7 +6,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from .latex import escape
+from .latex import escape, name_dashes
 from .names import Author
 
 ENTRY_TYPES = ["article", "unpublished", "book", "inproceedings", "incollection",
@@ -69,7 +69,7 @@ def note_value(e: Entry) -> str:
 def field_values(e: Entry) -> dict[str, str]:
     values = {
         "author": " and ".join(a.full for a in e.authors),
-        "title": f"{{{escape(e.title)}}}",
+        "title": f"{{{escape(name_dashes(e.title))}}}",
         "year": str(e.year) if e.year else "",
         "journal": escape(e.journal)
         or ("Preprint" if e.entry_type == "unpublished" and e.arxiv else ""),

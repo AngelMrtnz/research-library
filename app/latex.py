@@ -55,6 +55,7 @@ def _font(m: re.Match) -> str:
 
 def to_unicode(text: str) -> str:
     """``$\\mathbb{R}^n$`` -> ``ℝⁿ``, for display. Unknown commands lose the backslash."""
+    text = text.replace("---", "—").replace("--", "–")
     if "\\" not in text and "$" not in text:
         return text
     out = _FONT.sub(_font, text)
@@ -75,6 +76,32 @@ def to_plain(text: str) -> str:
     out = re.sub(r"\\([&%#$_{}])", r"\1", out)
     out = re.sub(r"[\^_]", "", out)
     return out.replace("$", "").replace("{", "").replace("}", "")
+
+
+# Capitalized words that start compounds rather than name a person ("Non-Abelian").
+PREFIXES = {"non", "anti", "semi", "quasi", "pre", "post", "multi", "co", "bi", "sub",
+            "super", "pseudo", "self", "higher", "well", "left", "right", "first", "second",
+            "third", "time", "gauge", "half", "all", "one", "two", "three", "low", "high"}
+_PAIR = re.compile(r"([^\W\d_]+)(?:--|-|–|—)(?=([^\W\d_]+))")
+
+
+def _is_name(word: str) -> bool:
+    return word[0].isupper() and any(c.islower() for c in word[1:])
+
+
+def name_dashes(text: str) -> str:
+    """``Hamilton-Jacobi`` / ``Hamilton–Jacobi`` -> ``Hamilton--Jacobi`` (LaTeX en dash).
+
+    Only between two capitalized words, outside math; ``Non-Abelian`` stays as is.
+    """
+    def fix(m: re.Match) -> str:
+        first, second = m.groups()
+        if _is_name(first) and _is_name(second) and first.lower() not in PREFIXES:
+            return first + "--"
+        return m.group(0)
+
+    parts = re.split(r"(\$[^$]*\$)", text)
+    return "".join(p if p.startswith("$") else _PAIR.sub(fix, p) for p in parts)
 
 
 def escape(text: str) -> str:

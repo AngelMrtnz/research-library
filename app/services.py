@@ -19,6 +19,7 @@ from . import db
 from .bibtex import Entry, render, render_library
 from .config import Settings
 from .extract import QUOTA_ERROR, Extraction, Venue, check_venue, extract
+from .latex import name_dashes
 from .lookup import published_version
 from .names import ascii_fold, build_filename, citation_key, dedupe_filename, unique_key
 from .storage import Storage
@@ -212,6 +213,7 @@ class Library:
                               (str(x)[:500], paper_id))
             self.conn.commit()
             return
+        x.title = name_dashes(x.title)
         if dup := self.find_duplicate(paper_id, x.title, x.doi):
             x.notes = (f"Possible duplicate of {dup}. " + x.notes).strip()
         fields = x.model_dump(exclude={"tags", "new_tags", "notes", "needs_more_pages"})

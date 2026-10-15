@@ -29,7 +29,8 @@ class Extraction(BaseModel):
                        "convert ALL CAPS titles to normal case. Write accented letters as "
                        "normal Unicode characters (León), and math or symbols in LaTeX "
                        "between $...$ exactly as printed, e.g. $\\mathbb{R}^n$, "
-                       "$\\mathfrak{g}$, $\\alpha$-Lie; never flatten them to plain ASCII.")
+                       "$\\mathfrak{g}$, $\\alpha$-Lie; never flatten them to plain ASCII. Join "
+                       "two people's names with a LaTeX en dash: Hamilton--Jacobi.")
     authors: list[Author] = Field(description="All authors in the order printed. given = "
                                   "given names as printed, particle = lowercase surname "
                                   "particle such as 'de', 'van der', family = surname. "

@@ -153,7 +153,7 @@ def authors_for_filename(authors: list[Author]) -> str:
 
 def build_filename(year: int | str | None, authors: list[Author], title: str) -> str:
     head = sanitize(f"{year or 'nd'}_{authors_for_filename(authors)}_")
-    title = sanitize(to_plain(title)) or "Untitled"
+    title = re.sub(r"-{2,}", "-", sanitize(to_plain(title))) or "Untitled"
     room = MAX_FILENAME - len(head) - len(".pdf")
     if len(title) > room:
         cut = title[:room]

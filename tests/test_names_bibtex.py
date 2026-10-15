@@ -212,3 +212,15 @@ def test_gemini_daily_limit_gives_a_clear_error(monkeypatch):
     with pytest.raises(extract.QuotaError, match="today's free requests"):
         extract.check_venue("X", "key", "a,b")
     assert not slept
+
+
+def test_name_pairs_get_latex_en_dash():
+    from app.latex import name_dashes
+
+    assert name_dashes("Hamilton-Jacobi and Lie–Poisson") == "Hamilton--Jacobi and Lie--Poisson"
+    assert name_dashes("Non-Abelian non-linear BV-BFV $L_\\infty$-Lie") == \
+        "Non-Abelian non-linear BV-BFV $L_\\infty$-Lie"
+    e = Entry(key="X_2020", title="Hamilton-Jacobi theory", year=2020, authors=PV)
+    assert "title = {{Hamilton--Jacobi theory}}" in render(e)
+    assert build_filename(2020, PV, "Hamilton--Jacobi theory") == \
+        "2020_Pugliese-Vinogradov_Hamilton-Jacobi theory.pdf"
