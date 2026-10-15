@@ -99,7 +99,7 @@ SQLite (+ FTS5) ◄────────────────────�
 - [ ] First real run on ~10 papers; tune the Gemini prompt against real PDFs
 - [ ] Bulk import of the existing library (papers already named, outside Inbox)
 - [ ] Rebuild DB from `library.bib` (`python -m app.rebuild`) for backups / new machines
-- [ ] Crossref/arXiv API lookup to verify Gemini output by DOI
+- [x] Crossref/arXiv lookup: preprints and papers without a journal get the published version proposed (ONLINE_LOOKUP=0 turns it off)
 - [ ] Settings page to edit house rules without code (threshold, particle rule)
 - [ ] Batch "confirm all reviewed" on the staging list
 - [x] Review page tidy-up: Delete (to trash) instead of Skip, shorter labels; LaTeX math kept in titles and BibTeX, ASCII only in filenames
@@ -108,6 +108,8 @@ SQLite (+ FTS5) ◄────────────────────�
 - [x] Visual pass: no emojis, active nav state, sentence-case labels, fewer words (Billy)
 - [x] Tag editor rebuilt (Library rows and review form): suggestions, keyboard, saves instantly, consistent kebab-case names
 - [x] start.bat runs the server in the background (pythonw, no console); Quit in the nav stops it
+- [x] Health check fixes (Oct 15): posts from other websites refused; PDFs read in place (no copies in `data/cache`, stale cache cleaned); Delete sends the PDF to the Recycle Bin; online lookup only for articles, preprints and misc; one lock around database writes; Library shows 50 papers at a time with "Show more" and fetches BibTeX on Copy (2,000 papers: 275 ms / 3.4 MB to 39 ms / 81 KB); one Gemini client reused, venue check skipped when Crossref gives the short name; `$L_\infty$` becomes `L-infinity` in filenames; files moved in Explorer are found again by name; 26 tests
+- [x] Gemini reads page one, and the first 6 pages when page one is not enough (cover pages, books with a copyright page, missing title/authors/year); "Delete all" in Review
 
 ## Guiding principle
 Minimal, easy and fast to run (Billy). Prefer fewer dependencies, fewer clicks, fewer visible fields.

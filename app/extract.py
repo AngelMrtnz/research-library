@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from collections import Counter
+from functools import lru_cache
 
 import pymupdf
 from pydantic import BaseModel, Field
 
 from .names import Author, parse_author
+
+log = logging.getLogger(__name__)
 
 DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+[^\s\"<>.,;)\]])", re.I)
 ARXIV_RE = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5})(v\d+)?", re.I)
@@ -24,7 +29,10 @@ class Extraction(BaseModel):
                        "convert ALL CAPS titles to normal case. Write accented letters as "
                        "normal Unicode characters (León), and math or symbols in LaTeX "
                        "between $...$ exactly as printed, e.g. $\\mathbb{R}^n$, "
-                       "$\\mathfrak{g}$, $\\alpha$-Lie; never flatten them to plain ASCII.")
+                       "$\\mathfrak{g}$, $\\alpha$-Lie; never flatten them to plain ASCII. Join "
+                       "two different people's names with a LaTeX en dash (Hamilton--Jacobi, "
+                       "Lie--Poisson, Euler--Lagrange), but keep one person's double surname "
+                       "with a single hyphen (Levi-Civita, Martínez-Muñoz).")
     authors: list[Author] = Field(description="All authors in the order printed. given = "
                                   "given names as printed, particle = lowercase surname "
                                   "particle such as 'de', 'van der', family = surname. "
@@ -47,19 +55,30 @@ class Extraction(BaseModel):
     new_tags: list[str] = Field(default_factory=list, description="At most 2 new "
                                 "lowercase-kebab tags, only if no existing tag fits")
     notes: str = Field("", description="Anything uncertain or guessed, for the reviewer")
+    needs_more_pages: bool = Field(False, description="True when these pages do not show "
+                                   "the title, all authors and the year, e.g. a cover, a "
+                                   "journal front page, or a book whose publisher, year "
+                                   "and ISBN are on a later copyright page")
 
 
 PROMPT = """You catalogue academic papers for a personal library (mostly mathematics and
-mathematical physics). From the attached first page, extract citation metadata.
-Read the page itself (it may be a scan or a photo): the text layer below can be empty,
-garbled or missing symbols, so trust what you see on the page over it.
+mathematical physics). From the attached {pages}, extract citation metadata.
+Read the pages themselves (they may be scans or photos): the text layer below can be
+empty, garbled or missing symbols, so trust what you see over it.
 Rules:
 - Authors exactly in the order printed. Never reorder.
-- Never invent fields. Leave a field empty when it is not on the page.
+- Never invent fields. Leave a field empty when it is not on the pages.
 - Preprints (arXiv, no journal yet) are entry_type "unpublished".
-- Tags: prefer these existing tags: {tags}. Add at most 2 new tags.
+- journal is only for real periodicals. A chapter in an edited book, memorial volume
+  or Festschrift is "incollection" with the book in booktitle; a conference paper is
+  "inproceedings" with the proceedings in booktitle.
+- Tags: 2-5 topic tags. Existing tags: {tags}.
+  Reuse an existing tag whenever it fits. Create a new tag (at most 2) only for a topic
+  none of them covers, and never a synonym, plural, abbreviation or narrower variant of
+  an existing one (e.g. not "lie-algebroids" when "lie-algebroid" exists). New tags are
+  short lowercase-kebab topics, specific enough to be useful across many papers.
 - Put anything you are unsure of in notes.
-Text layer of the first page, for reference:
+Text layer, for reference:
 ---
 {text}
 ---"""
@@ -70,6 +89,11 @@ def first_pages(pdf: bytes, n: int = 1) -> bytes:
         out = pymupdf.open()
         out.insert_pdf(doc, from_page=0, to_page=min(n, doc.page_count) - 1)
         return out.tobytes()
+
+
+def page_count(pdf: bytes) -> int:
+    with pymupdf.open(stream=pdf, filetype="pdf") as doc:
+        return doc.page_count
 
 
 def page_text(pdf: bytes, pages: int = 2) -> str:
@@ -120,33 +144,130 @@ def heuristic(pdf: bytes, existing_tags: list[str]) -> Extraction:
     )
 
 
-def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> Extraction:
+@lru_cache(maxsize=2)
+def _client(api_key: str):
+    """One Gemini client per key, reused across calls and threads."""
     from google import genai
+    from google.genai import types
+
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(
+        timeout=90_000, retry_options=types.HttpRetryOptions(attempts=2)))
+
+
+QUOTA_ERROR = "Gemini limit reached"
+# How long to keep waiting for the free per-minute limit before giving up on a paper.
+MAX_WAIT = 150
+
+
+class QuotaError(RuntimeError):
+    pass
+
+
+def _retry_after(exc: Exception) -> float:
+    """Seconds Gemini asks us to wait ("retry in 36.5s" / retryDelay '36s')."""
+    m = re.search(r"retry in ([\d.]+)s|retryDelay'?:\s*'(\d+)s", str(exc))
+    return min(float(m.group(1) or m.group(2)) + 1, 60) if m else 30
+
+
+def _daily(exc: Exception) -> bool:
+    return "PerDay" in str(exc)
+
+
+def _generate(api_key: str, models: str, contents: list, schema: type[BaseModel]) -> BaseModel:
+    """One structured Gemini call, falling back through the model list.
+
+    When every model is busy or over its per-minute limit, wait as long as Gemini asks
+    and try again, up to MAX_WAIT seconds in total.
+    """
     from google.genai import errors, types
 
-    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
-        retry_options=types.HttpRetryOptions(attempts=2)))
-    prompt = PROMPT.format(tags=", ".join(existing_tags) or "(none yet)",
-                           text=page_text(pdf, 1).strip()[:6000] or "(none: scanned page)")
-    contents = [types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
-                prompt]
+    client = _client(api_key)
     config = types.GenerateContentConfig(
-        response_mime_type="application/json", response_schema=Extraction, temperature=0.1,
+        response_mime_type="application/json", response_schema=schema, temperature=0.1,
     )
     names = [m.strip() for m in models.split(",") if m.strip()]
-    for i, model in enumerate(names):
-        try:
-            resp = client.models.generate_content(model=model, contents=contents, config=config)
-            break
-        except errors.APIError as exc:
-            # Busy (429/503) or retired (404) models fall through to the next one.
-            if exc.code not in (404, 429, 500, 503) or i == len(names) - 1:
-                raise
-    result = resp.parsed or Extraction.model_validate_json(resp.text)
+    waited = 0.0
+    while True:
+        waits, daily = [], 0
+        for model in names:
+            try:
+                resp = client.models.generate_content(model=model, contents=contents,
+                                                      config=config)
+                return resp.parsed or schema.model_validate_json(resp.text)
+            except errors.APIError as exc:
+                # Busy (429/503) or retired (404) models fall through to the next one.
+                if exc.code not in (404, 429, 500, 503):
+                    raise
+                last = exc
+                if exc.code == 429 and _daily(exc):
+                    daily += 1
+                elif exc.code != 404:
+                    waits.append(_retry_after(exc) if exc.code == 429 else 10)
+        if waits and waited + min(waits) <= MAX_WAIT:
+            delay = min(waits)
+            log.info("Gemini busy, waiting %.0fs", delay)
+            time.sleep(delay)
+            waited += delay
+            continue
+        if daily and not waits:
+            raise QuotaError(f"{QUOTA_ERROR}: today's free requests are used up (they reset "
+                             "overnight, at midnight California time). Click Refresh then.")
+        if last.code == 429:
+            raise QuotaError(f"{QUOTA_ERROR}: the free plan allows only a few papers per "
+                             "minute. Click Refresh in a minute to try again.")
+        raise last
+
+
+# Read page one first (fast); read this many when page one is not enough.
+MORE_PAGES = 6
+
+
+def incomplete(x: Extraction) -> bool:
+    """Page one was not enough: the model says so, or key fields are missing."""
+    book_details = x.entry_type in ("book", "phdthesis") and not (x.publisher or x.isbn)
+    return x.needs_more_pages or not (x.title and x.authors and x.year) or book_details
+
+
+def _ask_gemini(pdf: bytes, pages: int, existing_tags: list[str], api_key: str,
+                models: str) -> Extraction:
+    from google.genai import types
+
+    prompt = PROMPT.format(
+        pages="first page" if pages == 1 else f"first {pages} pages",
+        tags=", ".join(existing_tags) or "(none yet)",
+        text=page_text(pdf, pages).strip()[:6000 * pages] or "(none: scanned pages)")
+    contents = [types.Part.from_bytes(data=first_pages(pdf, pages),
+                                      mime_type="application/pdf"), prompt]
+    return _generate(api_key, models, contents, Extraction)
+
+
+def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> Extraction:
+    result = _ask_gemini(pdf, 1, existing_tags, api_key, models)
+    if incomplete(result) and page_count(pdf) > 1:
+        result = _ask_gemini(pdf, MORE_PAGES, existing_tags, api_key, models)
     # Identifiers found in the text layer beat the model's reading of them.
     for k, v in _identifiers(page_text(pdf)).items():
         setattr(result, k, getattr(result, k) or v)
     return result
+
+
+class Venue(BaseModel):
+    kind: str = Field(description="journal (a real periodical), proceedings (conference "
+                      "proceedings volume), book (edited book, festschrift, memorial volume, "
+                      "lecture notes), or unknown")
+    abbreviation: str = Field("", description="For a journal: its official ISO 4 "
+                              "abbreviation, e.g. 'J. Geom. Phys.'. Empty otherwise.")
+    name: str = Field("", description="Full canonical name of the venue")
+
+
+VENUE_PROMPT = """Is "{name}" an academic journal (a periodical with volumes and issues)?
+Use your knowledge of real journals. Memorial volumes ("in Memoriam"), Festschrifts,
+edited books and lecture-note volumes are books, not journals. If it is a journal, give
+its ISO 4 abbreviation (keep it if "{name}" already is one). Do not invent journals."""
+
+
+def check_venue(name: str, api_key: str, models: str) -> Venue:
+    return _generate(api_key, models, [VENUE_PROMPT.format(name=name)], Venue)
 
 
 def extract(pdf: bytes, existing_tags: list[str], api_key: str, model: str) -> Extraction:

@@ -122,5 +122,5 @@
     el.dataset.ready = "1"; editor(el);
   });
   document.addEventListener("DOMContentLoaded", () => init(document));
-  document.addEventListener("htmx:afterSwap", (e) => init(e.target));
+  document.addEventListener("htmx:load", (e) => init(e.target));
 })();

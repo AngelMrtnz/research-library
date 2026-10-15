@@ -22,7 +22,7 @@ $env:AUTH_DISABLED=1; uvicorn app.main:app --reload
 
 ## Use it with your Google Drive
 
-**Option A: on your own PC (simplest, the default).** Double-click `start.bat`: it opens the browser and keeps running in the background with no window (log in `data/server.log`); click **Quit** in the top bar to stop it. The first run creates `config.env` from `config.env.example`; set `LOCAL_LIBRARY_DIR` to your Papers folder inside Google Drive for Desktop and paste your `GEMINI_API_KEY`. Renames happen on disk and Drive syncs them. The app listens on `127.0.0.1` only, so there is no login.
+**Option A: on your own PC (simplest, the default).** Double-click `start.bat`: it opens the browser and keeps running in the background with no window (log in `data/server.log`); double-clicking it again restarts it (picking up any code changes), and it stops by itself a few minutes after you close the last tab, or click **Quit**. The first run creates `config.env` from `config.env.example`; set `LOCAL_LIBRARY_DIR` to your Papers folder inside Google Drive for Desktop and paste your `GEMINI_API_KEY`. Renames happen on disk and Drive syncs them. The app listens on `127.0.0.1` only, so there is no login.
 
 **Option B: hosted (reach it from any device).** Uses the Drive API and needs the extra packages in `requirements-hosted.txt`.
 1. In [Google Cloud console](https://console.cloud.google.com/): create a project, enable the **Google Drive API**, configure the OAuth consent screen (External, add yourself as a test user), and create an **OAuth client ID** of type *Web application* with redirect URI `https://<your-host>/auth/callback`.
@@ -43,7 +43,7 @@ Only `OWNER_EMAIL` can sign in. Everything else gets a 403.
 1. Drop PDFs into `Papers/Inbox` (or use **Upload** on the Review page).
 2. Open **Review**. New PDFs are picked up automatically and read in parallel (a few seconds each with Gemini).
 3. Open one: first page on the left, every field editable on the right. Changing title/authors/year/type regenerates the key, filename and BibTeX live; you can still hand-edit the BibTeX.
-4. **Confirm & Rename** (or Ctrl+Enter) renames the file, moves it from `Inbox/` to `Papers/`, and rewrites `Papers/library.bib`. **Undo rename** puts it back.
+4. **Confirm & Rename** (or Ctrl+Enter) renames the file, moves it from `Inbox/` to `Papers/`, and rewrites `Papers/library.bib`. **Undo rename** puts it back. **Delete** sends the PDF to the Recycle Bin.
 
 ## Development
 ```bash

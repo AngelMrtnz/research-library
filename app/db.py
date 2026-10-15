@@ -70,6 +70,19 @@ def tag_name(text: str) -> str:
     return re.sub(r"-+", "-", text).strip("-")
 
 
+def _stem(name: str) -> str:
+    """Compare tags loosely: ``Lie Algebroids`` ~ ``lie-algebroid``."""
+    words = [w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+             for w in tag_name(name).split("-")]
+    return "".join(words)
+
+
+def match_tag(name: str, existing: list[str]) -> str:
+    """Snap a proposed tag onto an existing one that differs only in form."""
+    stem = _stem(name)
+    return next((t for t in existing if _stem(t) == stem), tag_name(name))
+
+
 def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
     name = tag_name(name)
     row = conn.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()
@@ -94,6 +107,20 @@ def paper_tags(conn: sqlite3.Connection, paper_id: int) -> list[sqlite3.Row]:
         "WHERE pt.paper_id = ? ORDER BY t.name",
         (paper_id,),
     ).fetchall()
+
+
+def merge_tag(conn: sqlite3.Connection, tag_id: int, into: str) -> None:
+    """Give every paper with ``tag_id`` the tag ``into`` instead, then delete ``tag_id``."""
+    target = ensure_tag(conn, into)
+    if target == tag_id:
+        return
+    papers = [r[0] for r in conn.execute(
+        "SELECT paper_id FROM paper_tags WHERE tag_id = ?", (tag_id,))]
+    conn.executemany("INSERT OR IGNORE INTO paper_tags VALUES (?, ?)",
+                     [(p, target) for p in papers])
+    conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+    for p in papers:
+        reindex(conn, p)
 
 
 def all_tags(conn: sqlite3.Connection) -> list[sqlite3.Row]:

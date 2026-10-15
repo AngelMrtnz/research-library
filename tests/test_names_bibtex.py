@@ -154,3 +154,74 @@ def test_latex_title_kept_in_bibtex_shown_as_unicode_flattened_in_filename():
     assert to_unicode(title) == "Lie algebroids on ℝⁿ & g-manifolds"
     assert build_filename(2020, e.authors, title) == \
         "2020_de Leon_Lie algebroids on Rn & g-manifolds.pdf"
+
+
+def test_math_in_filenames_keeps_its_meaning():
+    from app.latex import to_plain
+
+    assert to_plain(r"$L_\infty$-algebras") == "L-infinity-algebras"
+    assert to_plain(r"Homotopy $L_{\infty}$ structures") == "Homotopy L-infinity structures"
+    assert to_plain(r"$\infty$-jets and $\alpha$-x") == "infinity-jets and alpha-x"
+
+
+def _quota(per: str = "Minute"):
+    from google.genai import errors
+
+    return errors.APIError(429, {"error": {
+        "code": 429, "status": "RESOURCE_EXHAUSTED",
+        "message": "Quota exceeded. Please retry in 2.5s.",
+        "details": [{"violations": [{"quotaId": f"GenerateRequestsPer{per}PerProjectPerModel"}]}],
+    }})
+
+
+def _fake_client(monkeypatch, outcomes):
+    from types import SimpleNamespace
+
+    from app import extract
+
+    calls = []
+
+    def generate_content(model, contents, config):
+        calls.append(model)
+        out = outcomes.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return SimpleNamespace(parsed=out, text="")
+    monkeypatch.setattr(extract, "_client", lambda key: SimpleNamespace(
+        models=SimpleNamespace(generate_content=generate_content)))
+    slept = []
+    monkeypatch.setattr(extract.time, "sleep", slept.append)
+    return calls, slept
+
+
+def test_gemini_waits_when_every_model_is_over_the_minute_limit(monkeypatch):
+    from app import extract
+
+    ok = extract.Venue(kind="journal")
+    calls, slept = _fake_client(monkeypatch, [_quota(), _quota(), ok])
+    assert extract.check_venue("X", "key", "a,b") is ok
+    assert calls == ["a", "b", "a"] and slept == [3.5]
+
+
+def test_gemini_daily_limit_gives_a_clear_error(monkeypatch):
+    import pytest
+
+    from app import extract
+
+    calls, slept = _fake_client(monkeypatch, [_quota("Day"), _quota("Day")])
+    with pytest.raises(extract.QuotaError, match="today's free requests"):
+        extract.check_venue("X", "key", "a,b")
+    assert not slept
+
+
+def test_unicode_dashes_become_latex_and_hyphens_stay():
+    from app.latex import name_dashes
+
+    assert name_dashes("Hamilton–Jacobi and Lie—Poisson") == "Hamilton--Jacobi and Lie---Poisson"
+    assert name_dashes("Levi-Civita and Martínez-Muñoz connections") == \
+        "Levi-Civita and Martínez-Muñoz connections"
+    assert name_dashes("$a–b$ Hamilton--Jacobi") == "$a–b$ Hamilton--Jacobi"
+    e = Entry(key="X_2020", title="Hamilton–Jacobi theory", year=2020, authors=PV)
+    assert "title = {{Hamilton--Jacobi theory}}" in render(e)
+    assert build_filename(2020, PV, "Hamilton--Jacobi theory") == \
+        "2020_Pugliese-Vinogradov_Hamilton-Jacobi theory.pdf"

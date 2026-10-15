@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -43,6 +50,8 @@ templates.env.filters["names"] = lambda authors: ", ".join(
 _conn = db.connect(settings.db_path)
 _library: Library | None = None
 _process_lock = threading.Lock()
+# Last time any page talked to us; app.serve stops the server when no tab is open.
+last_seen = time.monotonic()
 
 
 @app.exception_handler(LoginRequired)
@@ -60,9 +69,16 @@ def get_library(_: str = Depends(require_owner)) -> Library:
 def process_in_background(lib: Library) -> None:
     if _process_lock.acquire(blocking=False):
         try:
-            lib.process_pending()
+            # Keep going while new PDFs arrive during a run.
+            while lib.process_pending():
+                pass
         finally:
             _process_lock.release()
+
+
+def waiting() -> int:
+    return _conn.execute("SELECT COUNT(*) FROM papers WHERE status IN "
+                         "('pending','staged','error')").fetchone()[0]
 
 
 def tag_index() -> list[dict]:
@@ -71,6 +87,7 @@ def tag_index() -> list[dict]:
 
 def page(request: Request, name: str, **ctx) -> HTMLResponse:
     ctx.setdefault("tag_index", tag_index())
+    ctx.setdefault("staged", waiting())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -103,19 +120,33 @@ def tag_list(data: dict) -> list[str]:
 
 
 # ---- library ---------------------------------------------------------------
+PAGE_SIZE = 50
+
+
 @app.get("/", response_class=HTMLResponse)
 def library_page(request: Request, q: str = "", tag: list[str] = Query(default=[]),
-                 lib: Library = Depends(get_library)):
+                 offset: int = 0, lib: Library = Depends(get_library)):
     tags = tag or []
-    rows = lib.search(q, tags)
-    ctx = dict(q=q, active=tags, papers=[(r, entry_dict(r), db.paper_tags(_conn, r["id"]))
-                                         for r in rows],
-               tags=db.all_tags(_conn), export_qs=urlencode({"q": q, "tag": tags}, doseq=True),
-               staged=_conn.execute("SELECT COUNT(*) FROM papers WHERE status IN "
-                                    "('pending','staged','error')").fetchone()[0])
+    rows = lib.search(q, tags, limit=PAGE_SIZE, offset=offset)
+    total = lib.count(q, tags) if offset == 0 else 0
+    more = offset + PAGE_SIZE
+    colors = {t["name"]: t["color"] for t in db.all_tags(_conn)}
+    ctx = dict(q=q, active=tags, colors=colors, total=total,
+               facets=lib.tag_counts(q, tags) if offset == 0 else [],
+               papers=[(r, entry_dict(r), db.paper_tags(_conn, r["id"])) for r in rows],
+               more_qs=urlencode({"q": q, "tag": tags, "offset": more}, doseq=True)
+               if len(rows) == PAGE_SIZE else "",
+               export_qs=urlencode({"q": q, "tag": tags}, doseq=True))
+    if offset:  # "Show more": just the next rows
+        return page(request, "partials/rows.html", **ctx)
     if request.headers.get("HX-Request") and request.headers.get("HX-Target") == "results":
         return page(request, "partials/results.html", **ctx)
     return page(request, "library.html", **ctx)
+
+
+@app.get("/papers/{paper_id}/bibtex")
+def paper_bibtex(paper_id: int, lib: Library = Depends(get_library)):
+    return PlainTextResponse(lib.get(paper_id)["bibtex"] or "")
 
 
 @app.get("/export.bib")
@@ -138,9 +169,10 @@ async def edit_tags(request: Request, paper_id: int, lib: Library = Depends(get_
     """Replace a paper's tags with the space-separated list sent by the tag editor."""
     form = await request.form()
     lib.get(paper_id)
-    db.set_paper_tags(_conn, paper_id, tag_list(dict(form)))
-    db.reindex(_conn, paper_id)
-    _conn.commit()
+    with lib.lock:
+        db.set_paper_tags(_conn, paper_id, tag_list(dict(form)))
+        db.reindex(_conn, paper_id)
+        _conn.commit()
     return {"tags": [t["name"] for t in db.paper_tags(_conn, paper_id)], "index": tag_index()}
 
 
@@ -158,6 +190,34 @@ def quit_app(_: Library = Depends(get_library)):
                         "Research Library stopped. Open start.bat to run it again.</body>")
 
 
+@app.middleware("http")
+async def mark_seen(request: Request, call_next):
+    global last_seen
+    last_seen = time.monotonic()
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def same_site_only(request: Request, call_next):
+    """Refuse form posts from other websites (the app has no login on the PC)."""
+    if request.method == "POST":
+        site = request.headers.get("sec-fetch-site", "")
+        origin = request.headers.get("origin", "")
+        own = f"{request.url.scheme}://{request.url.netloc}"
+        if site in ("cross-site", "same-site") or (origin and origin != own):
+            return PlainTextResponse("Blocked: request from another site.", status_code=403)
+    return await call_next(request)
+
+
+@app.get("/ping")
+def ping():
+    return Response(status_code=204)
+
+
+def busy() -> bool:
+    return _process_lock.locked()
+
+
 # ---- tags ------------------------------------------------------------------
 @app.get("/tags", response_class=HTMLResponse)
 def tags_page(request: Request, _: Library = Depends(get_library)):
@@ -165,17 +225,20 @@ def tags_page(request: Request, _: Library = Depends(get_library)):
 
 
 @app.post("/tags/{tag_id}")
-async def update_tag(request: Request, tag_id: int, _: Library = Depends(get_library)):
+async def update_tag(request: Request, tag_id: int, lib: Library = Depends(get_library)):
     form = await request.form()
-    if form.get("delete"):
-        affected = [r[0] for r in _conn.execute(
-            "SELECT paper_id FROM paper_tags WHERE tag_id = ?", (tag_id,))]
-        _conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
-        for pid in affected:
-            db.reindex(_conn, pid)
-    elif form.get("color") in db.PALETTE:
-        _conn.execute("UPDATE tags SET color = ? WHERE id = ?", (form["color"], tag_id))
-    _conn.commit()
+    with lib.lock:
+        if form.get("merge_into"):
+            db.merge_tag(_conn, tag_id, str(form["merge_into"]))
+        elif form.get("delete"):
+            affected = [r[0] for r in _conn.execute(
+                "SELECT paper_id FROM paper_tags WHERE tag_id = ?", (tag_id,))]
+            _conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+            for pid in affected:
+                db.reindex(_conn, pid)
+        elif form.get("color") in db.PALETTE:
+            _conn.execute("UPDATE tags SET color = ? WHERE id = ?", (form["color"], tag_id))
+        _conn.commit()
     return RedirectResponse("/tags", status_code=303)
 
 
@@ -183,8 +246,10 @@ async def update_tag(request: Request, tag_id: int, _: Library = Depends(get_lib
 @app.get("/staging", response_class=HTMLResponse)
 def staging_page(request: Request, bg: BackgroundTasks, msg: str = "",
                  lib: Library = Depends(get_library)):
-    if not request.headers.get("HX-Request") and lib.scan():
-        bg.add_task(process_in_background, lib)
+    if not request.headers.get("HX-Request"):
+        lib.retry_quota_errors()
+        lib.scan()
+        bg.add_task(process_in_background, lib)  # also picks up anything left pending
     rows = _conn.execute(
         "SELECT * FROM papers WHERE status IN ('pending','staged','error') ORDER BY id"
     ).fetchall()
@@ -203,7 +268,7 @@ def scan(bg: BackgroundTasks, lib: Library = Depends(get_library)):
 
 
 @app.post("/upload")
-async def upload(files: list[UploadFile], bg: BackgroundTasks,
+async def upload(request: Request, files: list[UploadFile], bg: BackgroundTasks,
                  lib: Library = Depends(get_library)):
     n = 0
     for f in files:
@@ -211,6 +276,8 @@ async def upload(files: list[UploadFile], bg: BackgroundTasks,
             lib.upload(f.filename, await f.read())
             n += 1
     bg.add_task(process_in_background, lib)
+    if "application/json" in request.headers.get("accept", ""):
+        return {"added": n, "waiting": waiting()}
     return RedirectResponse(f"/staging?msg=Added+{n}+PDF(s)", status_code=303)
 
 
@@ -225,10 +292,13 @@ def preview(paper_id: int, lib: Library = Depends(get_library)):
 
 
 @app.get("/papers/{paper_id}/file.pdf")
-def pdf(paper_id: int, lib: Library = Depends(get_library)):
+@app.get("/papers/{paper_id}/pdf/{name}")
+def pdf(paper_id: int, name: str = "", lib: Library = Depends(get_library)):
+    """The PDF, shown and saved under its own filename."""
     row = lib.get(paper_id)
-    return Response(lib.pdf_bytes(row["file_id"]), media_type="application/pdf",
-                    headers={"Content-Disposition": "inline"})
+    disposition = f"inline; filename*=UTF-8''{quote(row['filename'])}"
+    return FileResponse(lib.pdf_path(row["file_id"]), media_type="application/pdf",
+                        headers={"Content-Disposition": disposition})
 
 
 def review_ctx(lib: Library, paper_id: int, error: str = "") -> dict:
@@ -289,7 +359,24 @@ def rerun(paper_id: int, lib: Library = Depends(get_library)):
     return RedirectResponse(f"/staging/{paper_id}", status_code=303)
 
 
+@app.post("/staging/reread-all")
+def reread_all(bg: BackgroundTasks, lib: Library = Depends(get_library)):
+    n = lib.reread_all()
+    bg.add_task(process_in_background, lib)
+    return RedirectResponse(f"/staging?msg=Reading+{n}+PDF(s)+again", status_code=303)
+
+
+@app.post("/staging/delete-all")
+def delete_all(lib: Library = Depends(get_library)):
+    n = lib.delete_all_in_review()
+    return RedirectResponse(f"/staging?msg=Deleted+{n}+PDF(s)", status_code=303)
+
+
 @app.post("/staging/{paper_id}/delete")
-def delete(paper_id: int, lib: Library = Depends(get_library)):
+@app.post("/papers/{paper_id}/delete")
+def delete(request: Request, paper_id: int, lib: Library = Depends(get_library)):
+    confirmed = lib.get(paper_id)["status"] == "confirmed"
     lib.delete(paper_id)
-    return RedirectResponse("/staging", status_code=303)
+    if request.headers.get("HX-Request"):
+        return HTMLResponse("")
+    return RedirectResponse("/" if confirmed else "/staging", status_code=303)

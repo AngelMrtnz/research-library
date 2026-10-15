@@ -11,6 +11,12 @@
       {% for c in palette %}
       <button name="color" value="{{ c }}" title="{{ c }}" class="h-5 w-5 rounded-full bg-{{ c }}-400 {{ 'ring-2 ring-offset-1 ring-slate-800 dark:ring-white' if c == t.color }}"></button>
       {% endfor %}
+      <select name="merge_into" title="Move this tag's papers to another tag, then delete it"
+              class="ml-3 rounded border border-slate-300 bg-white py-0.5 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-800"
+              onchange="if (this.value && confirm('Merge {{ t.name }} into ' + this.value + '?')) this.form.submit(); else this.value = ''">
+        <option value="">merge into…</option>
+        {% for o in tags if o.id != t.id %}<option>{{ o.name }}</option>{% endfor %}
+      </select>
       <button name="delete" value="1" class="ml-3 text-xs text-slate-400 hover:text-rose-600" onclick="return confirm('Delete tag {{ t.name }}?')">delete</button>
     </form>
   </li>

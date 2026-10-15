@@ -16,7 +16,7 @@
     <nav class="mx-auto flex max-w-6xl items-center gap-1 px-4 py-2.5 text-sm">
       <a href="/" class="mr-4 font-semibold tracking-tight">Research Library</a>
       {{ nav("/", "Library", path == "/") }}
-      {% call nav("/staging", "Review", path.startswith("/staging")) %}{% if staged %}<span class="rounded-full bg-blue-600 px-1.5 text-xs font-medium text-white">{{ staged }}</span>{% endif %}{% endcall %}
+      {% call nav("/staging", "Review", path.startswith("/staging")) %}<span id="review-count" class="rounded-full bg-blue-600 px-1.5 text-xs font-medium text-white {{ '' if staged else 'hidden' }}">{{ staged }}</span>{% endcall %}
       {{ nav("/tags", "Tags", path == "/tags") }}
       {% if local %}<form method="post" action="/quit" class="ml-auto"><button class="text-slate-400 hover:text-slate-800 dark:hover:text-white">Quit</button></form>{% endif %}
       {% if auth_on %}<a href="/logout" class="{{ '' if local else 'ml-auto' }} text-slate-500 hover:text-slate-800 dark:hover:text-white">Sign out</a>{% endif %}
@@ -26,12 +26,18 @@
     {% if msg %}<div class="mb-4 rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">{{ msg }}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
-  <div id="drop" class="pointer-events-none fixed inset-0 z-50 hidden items-center justify-center bg-blue-600/20 backdrop-blur-sm">
-    <div class="rounded-2xl border-2 border-dashed border-blue-500 bg-white px-10 py-8 text-center text-lg font-medium text-blue-700 shadow-xl dark:bg-slate-800 dark:text-blue-300">
-      <span id="drop-text">Drop PDFs</span>
-    </div>
+  <div id="drop" class="pointer-events-none fixed inset-2 z-50 hidden items-end justify-center rounded-xl bg-slate-900/[0.02] ring-2 ring-inset ring-blue-500/60 dark:bg-white/[0.02]">
+    <div class="mb-6 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-md dark:bg-white dark:text-slate-900">Drop to add to Review</div>
   </div>
+  <div id="toast" class="fixed bottom-4 right-4 z-50 hidden items-center gap-3 rounded-lg bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg dark:bg-white dark:text-slate-900"></div>
   <script>
+    // BibTeX is fetched on click, so the library page stays small.
+    async function copyBib(btn, id) {
+      const text = await (await fetch(`/papers/${id}/bibtex`)).text();
+      await navigator.clipboard.writeText(text);
+      const label = btn.textContent; btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = label; }, 1200);
+    }
     // Drag PDFs onto any page: they go to the Inbox and show up in Review.
     const drop = document.getElementById("drop");
     let depth = 0;
@@ -45,15 +51,38 @@
       e.preventDefault(); depth = 0;
       uploadPdfs(e.dataTransfer.files);
     });
+    // Uploads run in the background; a small notice shows progress and you keep working.
+    const toast = document.getElementById("toast");
+    let toastTimer;
+    function notify(html, ms) {
+      clearTimeout(toastTimer);
+      toast.innerHTML = html;
+      toast.classList.replace("hidden", "flex");
+      if (ms) toastTimer = setTimeout(() => toast.classList.replace("flex", "hidden"), ms);
+    }
+    // Tell the server a tab is open; it stops by itself a few minutes after the last one closes.
+    setInterval(() => fetch("/ping").catch(() =>
+      notify("The app has stopped. Open start.bat to start it again.")), 30000);
+    const plural = (n) => `${n} PDF${n === 1 ? "" : "s"}`;
     async function uploadPdfs(files) {
+      show(false);
       const pdfs = [...files].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-      if (!pdfs.length) { show(false); return; }
-      show(true);
-      document.getElementById("drop-text").textContent = `Adding ${pdfs.length} PDF${pdfs.length > 1 ? "s" : ""}`;
+      if (!pdfs.length) return;
+      notify(`Adding ${plural(pdfs.length)}`);
       const body = new FormData();
       pdfs.forEach((f) => body.append("files", f));
-      const r = await fetch("/upload", { method: "POST", body });
-      location.href = r.ok ? r.url : "/staging?msg=Upload+failed";
+      try {
+        const r = await fetch("/upload", { method: "POST", body, headers: { Accept: "application/json" } });
+        if (!r.ok) throw new Error(r.status);
+        const { added = pdfs.length, waiting = null } = await r.json().catch(() => ({}));
+        const badge = document.getElementById("review-count");
+        if (waiting !== null) { badge.textContent = waiting; badge.classList.toggle("hidden", !waiting); }
+        const rows = document.getElementById("rows");
+        if (rows) htmx.ajax("GET", "/staging", { target: "#rows", swap: "innerHTML" });
+        notify(`${plural(added)} added${rows ? "" : ' <a href="/staging" class="font-medium underline">Review</a>'}`, 5000);
+      } catch {
+        notify("Upload failed", 5000);
+      }
     }
   </script>
 </body>
