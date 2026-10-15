@@ -46,7 +46,11 @@
       {% set extra = [('booktitle', 'Book / proceedings'), ('number', 'Number'), ('url', 'URL'), ('publisher', 'Publisher'), ('address', 'Address'), ('edition', 'Edition'), ('series', 'Series'), ('isbn', 'ISBN'), ('note', 'Note')] %}
       <div class="grid grid-cols-2 gap-3">
         {% for f, l in core %}
-        <div class="{{ 'col-span-2' if f == 'journal' }}"><label class="{{ label }}">{{ l }}</label><input name="{{ f }}" value="{{ e[f] or '' }}" class="meta {{ input }}"></div>
+        <div class="{{ 'col-span-2' if f == 'journal' }}"><label class="{{ label }}">{{ l }}
+          {% if f in ('doi', 'arxiv') %}<a href="#" target="_blank" rel="noopener" title="Open in a new tab to check it"
+             class="float-right normal-case text-blue-600 hover:underline"
+             onclick="const v = this.closest('div').querySelector('input').value.trim(); if (!v) return false;
+                      this.href = /^https?:/.test(v) ? v : '{{ 'https://doi.org/' if f == 'doi' else 'https://arxiv.org/abs/' }}' + v">Open</a>{% endif %}</label><input name="{{ f }}" value="{{ e[f] or '' }}" class="meta {{ input }}"></div>
         {% endfor %}
       </div>
       {% set ns = namespace(any=false) %}{% for f, l in extra %}{% if e[f] %}{% set ns.any = true %}{% endif %}{% endfor %}
