@@ -115,22 +115,28 @@ def heuristic(pdf: bytes, existing_tags: list[str]) -> Extraction:
     )
 
 
-def gemini(pdf: bytes, existing_tags: list[str], api_key: str, model: str) -> Extraction:
+def gemini(pdf: bytes, existing_tags: list[str], api_key: str, models: str) -> Extraction:
     from google import genai
-    from google.genai import types
+    from google.genai import errors, types
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
+        retry_options=types.HttpRetryOptions(attempts=2)))
     prompt = PROMPT.format(tags=", ".join(existing_tags) or "(none yet)",
                            text=page_text(pdf, 1)[:6000])
-    resp = client.models.generate_content(
-        model=model,
-        contents=[types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
-                  prompt],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json", response_schema=Extraction,
-            temperature=0.1,
-        ),
+    contents = [types.Part.from_bytes(data=first_pages(pdf), mime_type="application/pdf"),
+                prompt]
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json", response_schema=Extraction, temperature=0.1,
     )
+    names = [m.strip() for m in models.split(",") if m.strip()]
+    for i, model in enumerate(names):
+        try:
+            resp = client.models.generate_content(model=model, contents=contents, config=config)
+            break
+        except errors.APIError as exc:
+            # Busy (429/503) or retired (404) models fall through to the next one.
+            if exc.code not in (404, 429, 500, 503) or i == len(names) - 1:
+                raise
     result = resp.parsed or Extraction.model_validate_json(resp.text)
     # Identifiers found in the text layer beat the model's reading of them.
     for k, v in _identifiers(page_text(pdf)).items():

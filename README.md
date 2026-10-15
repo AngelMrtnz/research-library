@@ -22,18 +22,13 @@ $env:AUTH_DISABLED=1; $env:STORAGE="local"; uvicorn app.main:app --reload
 
 ## Use it with your Google Drive
 
-**Option A: on your own PC (simplest).** Run the app with `STORAGE=local` pointing at your Drive for Desktop folder. Renames happen on disk and Drive syncs them.
-```
-STORAGE=local
-LOCAL_LIBRARY_DIR=G:/My Drive/Papers
-LOCAL_INBOX_DIR=G:/My Drive/Papers/Inbox
-```
+**Option A: on your own PC (simplest, the default).** Double-click `start.bat`. The first run creates `.env` from `.env.local.example`; set `LOCAL_LIBRARY_DIR` to your Papers folder inside Google Drive for Desktop and paste your `GEMINI_API_KEY`. Renames happen on disk and Drive syncs them. The app listens on `127.0.0.1` only, so there is no login.
 
 **Option B: hosted (reach it from any device).** Uses the Drive API.
 1. In [Google Cloud console](https://console.cloud.google.com/): create a project, enable the **Google Drive API**, configure the OAuth consent screen (External, add yourself as a test user), and create an **OAuth client ID** of type *Web application* with redirect URI `https://<your-host>/auth/callback`.
 2. Get a Gemini key at https://aistudio.google.com/apikey.
 3. In Drive, create `Papers/` and `Papers/Inbox/`; copy each folder's ID from its URL.
-4. Copy `.env.example` to `.env` and fill it in (`STORAGE=gdrive`).
+4. Copy `.env.example` to `.env` and fill it in (`STORAGE=gdrive`, `AUTH_DISABLED` unset).
 5. Deploy the container, e.g. Cloud Run:
    ```bash
    gcloud run deploy research-library --source . --region europe-west1 \

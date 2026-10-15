@@ -17,14 +17,15 @@ class Settings(BaseSettings):
 
     # "gdrive" uses the Drive API; "local" works on a folder on disk, e.g. the
     # Google Drive for Desktop folder (G:\My Drive\Papers) on your own PC.
-    storage: str = "gdrive"
+    storage: str = "local"
     drive_library_folder_id: str = ""
     drive_inbox_folder_id: str = ""
     local_library_dir: Path = Path("data/library")
     local_inbox_dir: Path = Path("data/library/Inbox")
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    # Comma-separated; later models are tried when one is busy or retired.
+    gemini_model: str = "gemini-3.5-flash,gemini-flash-latest,gemini-3.1-flash-lite"
 
     data_dir: Path = Path("data")
     bib_filename: str = "library.bib"
