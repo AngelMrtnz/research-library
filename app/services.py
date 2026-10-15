@@ -151,6 +151,14 @@ class Library:
                               (QUOTA_ERROR + "%",))
             self.conn.commit()
 
+    def reread_all(self) -> int:
+        """Send every paper in Review back to Gemini (the Re-read all button)."""
+        with self.lock:
+            n = self.conn.execute("UPDATE papers SET status = 'pending', error = NULL "
+                                  "WHERE status IN ('staged', 'error')").rowcount
+            self.conn.commit()
+        return n
+
     def scan(self) -> int:
         return sum(self.register(f.id, f.name) for f in self.storage.list_new_pdfs())
 

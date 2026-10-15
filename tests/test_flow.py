@@ -193,7 +193,7 @@ def test_delete_all_in_review(client):
     import shutil
     shutil.copy(client.inbox / "scan_0042.pdf", client.inbox / "copy.pdf")
     page = client.get("/staging").text
-    assert "Delete all" in page and "Refresh" in page
+    assert "Delete all" in page and "Re-read all" in page
     r = client.post("/staging/delete-all", follow_redirects=False)
     assert r.status_code == 303 and "Deleted+2" in r.headers["location"]
     assert not list(client.inbox.glob("*.pdf"))
@@ -235,3 +235,11 @@ def test_refresh_retries_papers_that_hit_the_gemini_limit(client):
     main._conn.commit()
     client.get("/staging")
     assert main._conn.execute("SELECT status FROM papers").fetchone()[0] != "error"
+
+
+def test_reread_all_sends_review_back_to_gemini(client):
+    import app.main as main
+    client.get("/staging")
+    r = client.post("/staging/reread-all", follow_redirects=False)
+    assert r.status_code == 303 and "Reading+1" in r.headers["location"]
+    assert main._conn.execute("SELECT status FROM papers").fetchone()[0] == "staged"
