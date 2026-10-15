@@ -117,3 +117,12 @@ def test_delete_trashes_unconfirmed_pdf(client):
     assert r.status_code == 303
     assert not (client.inbox / "scan_0042.pdf").exists()
     assert "scan_0042.pdf" not in client.get("/staging").text
+
+
+def test_tag_editor_replaces_tags_and_normalizes(client):
+    client.post("/scan")
+    r = client.post("/papers/1/tags", data={"tags": "Lie Algebroids,  poisson poisson Géométrie"})
+    assert r.json()["tags"] == ["algebroids", "geometrie", "lie", "poisson"]
+    assert "poisson" in {t["name"] for t in r.json()["index"]}
+    r = client.post("/papers/1/tags", data={"tags": "poisson"})
+    assert r.json()["tags"] == ["poisson"]

@@ -63,7 +63,12 @@ def process_in_background(lib: Library) -> None:
             _process_lock.release()
 
 
+def tag_index() -> list[dict]:
+    return [{"name": t["name"], "color": t["color"], "n": t["n"]} for t in db.all_tags(_conn)]
+
+
 def page(request: Request, name: str, **ctx) -> HTMLResponse:
+    ctx.setdefault("tag_index", tag_index())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -126,19 +131,15 @@ def master_bib(lib: Library = Depends(get_library)):
         "Content-Disposition": 'attachment; filename="library.bib"'})
 
 
-@app.post("/papers/{paper_id}/tags", response_class=HTMLResponse)
+@app.post("/papers/{paper_id}/tags")
 async def edit_tags(request: Request, paper_id: int, lib: Library = Depends(get_library)):
+    """Replace a paper's tags with the space-separated list sent by the tag editor."""
     form = await request.form()
-    current = [t["name"] for t in db.paper_tags(_conn, paper_id)]
-    if add := str(form.get("add", "")).strip():
-        current.append(add)
-    if remove := str(form.get("remove", "")):
-        current = [t for t in current if t != remove]
-    db.set_paper_tags(_conn, paper_id, current)
+    lib.get(paper_id)
+    db.set_paper_tags(_conn, paper_id, tag_list(dict(form)))
     db.reindex(_conn, paper_id)
     _conn.commit()
-    return page(request, "partials/paper_tags.html", paper=lib.get(paper_id),
-                ptags=db.paper_tags(_conn, paper_id))
+    return {"tags": [t["name"] for t in db.paper_tags(_conn, paper_id)], "index": tag_index()}
 
 
 @app.post("/papers/{paper_id}/undo")

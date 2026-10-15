@@ -4,10 +4,11 @@ const colors = ["blue", "emerald", "amber", "rose", "violet", "cyan", "lime", "o
                 "fuchsia", "teal", "sky", "pink"];
 module.exports = {
   darkMode: "media",
-  content: ["./app/templates/**/*.html"],
+  content: ["./app/templates/**/*.html", "./app/static/tags.js"],
   // Tag colors are chosen at runtime, so their classes must always be built.
   safelist: colors.flatMap((c) => [
     `bg-${c}-100`, `text-${c}-800`, `ring-${c}-300`, `ring-${c}-600`, `bg-${c}-400`,
     `dark:bg-${c}-900/40`, `dark:text-${c}-200`,
-  ]),
+  ]).concat(["bg-slate-100", "text-slate-800", "bg-slate-400", "dark:bg-slate-900/40",
+             "dark:text-slate-200"]),
 };

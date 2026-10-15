@@ -11,7 +11,7 @@
     <div class="text-sm text-slate-600 dark:text-slate-300">{{ e.authors | names }}{% if e.journal %} · <i>{{ e.journal }}</i>{% endif %}</div>
     <div class="mt-1 truncate text-xs text-slate-400" title="{{ paper.filename }}">{{ paper.filename }}</div>
     <div class="mt-2 flex flex-wrap items-center gap-3">
-      <div id="tags-{{ paper.id }}">{% set ptags = ptags %}{% include "partials/paper_tags.html" %}</div>
+      <div data-tag-editor data-url="/papers/{{ paper.id }}/tags" data-tags='{{ ptags | map(attribute="name") | list | tojson }}'></div>
       <div class="ml-auto flex gap-3 text-xs">
         <button class="text-slate-500 hover:text-blue-600" onclick="navigator.clipboard.writeText(this.nextElementSibling.value)">Copy BibTeX</button>
         <textarea hidden>{{ paper.bibtex }}</textarea>

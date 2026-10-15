@@ -106,6 +106,7 @@ SQLite (+ FTS5) ◄────────────────────�
 - [x] Drag PDFs onto any page; one "Add PDFs" button (no Rescan/Upload); library.bib tab removed, small ".bib" download in Library
 - [x] Scanned PDFs: Gemini told to read the page image when the text layer is empty or garbled
 - [x] Visual pass: no emojis, active nav state, sentence-case labels, fewer words (Billy)
+- [x] Tag editor rebuilt (Library rows and review form): suggestions, keyboard, saves instantly, consistent kebab-case names
 
 ## Guiding principle
 Minimal, easy and fast to run (Billy). Prefer fewer dependencies, fewer clicks, fewer visible fields.

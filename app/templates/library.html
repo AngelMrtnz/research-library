@@ -14,7 +14,7 @@
 <div id="active-tags">{% for t in active %}<input type="hidden" name="tag" value="{{ t }}">{% endfor %}</div>
 
 <div class="mt-4 flex flex-wrap gap-2">
-  {% for t in tags %}
+  {% for t in tags if t.n or t.name in active %}
     {% set on = t.name in active %}
     {% set others = active | reject('equalto', t.name) | list %}
     <a href="/?{{ {'q': q, 'tag': (others if on else active + [t.name])} | qs }}"
@@ -24,6 +24,5 @@
   {% if active %}<a href="/?{{ {'q': q} | qs }}" class="px-2 text-xs text-slate-500 hover:text-slate-800">Clear</a>{% endif %}
 </div>
 
-<datalist id="tag-names">{% for t in tags %}<option value="{{ t.name }}">{% endfor %}</datalist>
 <div id="results" class="mt-6">{% include "partials/results.html" %}</div>
 {% endblock %}
