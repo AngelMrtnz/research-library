@@ -13,11 +13,11 @@
 
 <div class="grid gap-6 lg:grid-cols-2">
   <div class="lg:sticky lg:top-4 lg:self-start">
-    <a href="/papers/{{ paper.id }}/file.pdf" target="_blank" title="Open the full PDF">
-      <img src="/papers/{{ paper.id }}/preview.png" alt="First page" class="w-full rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700">
+    <a href="/papers/{{ paper.id }}/file.pdf?v={{ paper.file_id }}" target="_blank" title="Open the full PDF">
+      <img src="/papers/{{ paper.id }}/preview.png?v={{ paper.file_id }}" alt="First page" class="w-full rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700">
     </a>
     <div class="mt-2 flex gap-4 text-xs text-slate-500">
-      <a href="/papers/{{ paper.id }}/file.pdf" target="_blank" class="hover:text-blue-600">Open PDF</a>
+      <a href="/papers/{{ paper.id }}/file.pdf?v={{ paper.file_id }}" target="_blank" class="hover:text-blue-600">Open PDF</a>
       {% if view_url %}<a href="{{ view_url }}" target="_blank" class="hover:text-blue-600">Open in Drive</a>{% endif %}
     </div>
   </div>
