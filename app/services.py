@@ -112,7 +112,9 @@ class Library:
              build_filename(entry.year, entry.authors, entry.title), x.notes,
              render(entry), paper_id),
         )
-        db.set_paper_tags(self.conn, paper_id, x.tags + x.new_tags[:2])
+        existing = [t["name"] for t in db.all_tags(self.conn)]
+        db.set_paper_tags(self.conn, paper_id,
+                          [db.match_tag(t, existing) for t in x.tags + x.new_tags[:2]])
         self.conn.commit()
 
     def find_duplicate(self, paper_id: int, title: str, doi: str) -> str | None:

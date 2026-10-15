@@ -57,7 +57,11 @@ Rules:
 - Authors exactly in the order printed. Never reorder.
 - Never invent fields. Leave a field empty when it is not on the page.
 - Preprints (arXiv, no journal yet) are entry_type "unpublished".
-- Tags: prefer these existing tags: {tags}. Add at most 2 new tags.
+- Tags: 2-5 topic tags. Existing tags: {tags}.
+  Reuse an existing tag whenever it fits. Create a new tag (at most 2) only for a topic
+  none of them covers, and never a synonym, plural, abbreviation or narrower variant of
+  an existing one (e.g. not "lie-algebroids" when "lie-algebroid" exists). New tags are
+  short lowercase-kebab topics, specific enough to be useful across many papers.
 - Put anything you are unsure of in notes.
 Text layer of the first page, for reference:
 ---

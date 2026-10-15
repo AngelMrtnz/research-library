@@ -70,6 +70,19 @@ def tag_name(text: str) -> str:
     return re.sub(r"-+", "-", text).strip("-")
 
 
+def _stem(name: str) -> str:
+    """Compare tags loosely: ``Lie Algebroids`` ~ ``lie-algebroid``."""
+    words = [w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+             for w in tag_name(name).split("-")]
+    return "".join(words)
+
+
+def match_tag(name: str, existing: list[str]) -> str:
+    """Snap a proposed tag onto an existing one that differs only in form."""
+    stem = _stem(name)
+    return next((t for t in existing if _stem(t) == stem), tag_name(name))
+
+
 def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
     name = tag_name(name)
     row = conn.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()

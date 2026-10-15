@@ -154,3 +154,12 @@ def test_latex_title_kept_in_bibtex_shown_as_unicode_flattened_in_filename():
     assert to_unicode(title) == "Lie algebroids on ℝⁿ & g-manifolds"
     assert build_filename(2020, e.authors, title) == \
         "2020_de Leon_Lie algebroids on Rn & g-manifolds.pdf"
+
+
+def test_new_tags_snap_to_existing_variants():
+    from app.db import match_tag
+
+    existing = ["lie-algebroid", "poisson-geometry", "contact"]
+    assert match_tag("Lie Algebroids", existing) == "lie-algebroid"
+    assert match_tag("poisson_geometry", existing) == "poisson-geometry"
+    assert match_tag("contact-manifolds", existing) == "contact-manifolds"
