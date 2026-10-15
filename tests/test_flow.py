@@ -153,3 +153,18 @@ def test_venue_check_moves_books_and_abbreviates_journals(tmp_path, monkeypatch)
         lib.fix_venue(y)
         assert y.journal == "J. Geom. Phys."
     assert calls.count("Journal of Geometry and Physics") == 1
+
+
+def test_delete_confirmed_paper_from_library(client):
+    client.post("/scan")
+    form = {"title": "On the geometry of singular Lagrangians",
+            "authors": "Pugliese, Fabrizio\nVinogradov, Alexandre M.", "year": "2000",
+            "entry_type": "article", "journal": "J. Geom. Phys.", "tags": "lagrangian",
+            "key": "PV_2000", "filename": "2000_PV.pdf", "bibtex": ""}
+    client.post("/staging/1/confirm", data=form)
+    assert "PV_2000" in (client.lib_dir / "library.bib").read_text()
+    r = client.post("/papers/1/delete", headers={"HX-Request": "true"})
+    assert r.status_code == 200 and r.text == ""
+    assert not (client.lib_dir / "2000_PV.pdf").exists()
+    assert "PV_2000" not in (client.lib_dir / "library.bib").read_text()
+    assert "No papers" in client.get("/", params={"q": "lagrangians"}).text

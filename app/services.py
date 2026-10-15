@@ -200,13 +200,15 @@ class Library:
         self.conn.commit()
 
     def delete(self, paper_id: int) -> None:
-        """Send an unconfirmed PDF to the trash and forget it."""
+        """Send the PDF to the trash and forget the paper; drop it from library.bib."""
         row = self.get(paper_id)
-        if row["status"] == "confirmed":
-            raise ValueError("Undo the rename before deleting a confirmed paper.")
         self.storage.trash(row["file_id"])
+        self.conn.execute("DELETE FROM paper_tags WHERE paper_id = ?", (paper_id,))
+        self.conn.execute("DELETE FROM papers_fts WHERE rowid = ?", (paper_id,))
         self.conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         self.conn.commit()
+        if row["status"] == "confirmed":
+            self.write_bib()
 
     # ---- the only writes to storage ---------------------------------------
     def confirm(self, paper_id: int, entry: Entry, filename: str, bibtex: str,

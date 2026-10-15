@@ -318,6 +318,10 @@ def rerun(paper_id: int, lib: Library = Depends(get_library)):
 
 
 @app.post("/staging/{paper_id}/delete")
-def delete(paper_id: int, lib: Library = Depends(get_library)):
+@app.post("/papers/{paper_id}/delete")
+def delete(request: Request, paper_id: int, lib: Library = Depends(get_library)):
+    confirmed = lib.get(paper_id)["status"] == "confirmed"
     lib.delete(paper_id)
-    return RedirectResponse("/staging", status_code=303)
+    if request.headers.get("HX-Request"):
+        return HTMLResponse("")
+    return RedirectResponse("/" if confirmed else "/staging", status_code=303)

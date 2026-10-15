@@ -12,7 +12,7 @@ Private web app: PDFs land in a Drive `Inbox/`, Gemini proposes metadata, the ow
 2. Take the next unchecked checklist item unless the user named one; tick it when done.
 
 ## Hard rules
-- **Never rename, move or finalize automatically.** Storage writes (`rename`, `write_bib`) are called only from `Library.confirm` / `Library.undo` in `app/services.py`. `tests/test_flow.py::test_scan_never_renames` guards this; keep it passing.
+- **Never rename, move or finalize automatically.** Storage writes (`rename`, `write_bib`, `trash`) are called only from `Library.confirm` / `Library.undo` / `Library.delete` in `app/services.py`, each triggered by an explicit click. `tests/test_flow.py::test_scan_never_renames` guards this; keep it passing.
 - Address files by ID, never by name.
 - Confirm order: rename in storage first, then DB, then `library.bib`.
 - Secrets only via env vars (`.env.example` documents them).
