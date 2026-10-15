@@ -5,7 +5,7 @@ These are Billy's own examples, with keys updated to the confirmed 4-digit year 
 ## Rules
 - **Key**: one letter per author surname in the order printed on the paper, then `_` and the 4-digit year. Particle adds its lowercase initial (`de León` → `dL`). Single author: first three letters of the surname. Accents folded to ASCII. _(Particle still to be confirmed: `dL` as in `dLGIMR_2026`, or `L` as in `LRV_24`.)_
 - **author**: full `Given Surname` names joined by ` and `, UTF-8 accents.
-- **title**: double braces `{{…}}`.
+- **title**: double braces `{{…}}`. Accented letters stay UTF-8; math and symbols in LaTeX (`$\mathbb{R}^n$`); `&`, `%`, `#` escaped outside math. The library shows titles with math as Unicode (ℝⁿ); only the filename is plain ASCII.
 - **journal**: standard abbreviation (`J. Geom. Phys.`). Preprints: `journal = {Preprint}` on an `@unpublished`.
 - **volume** (articles): bold, `{{\bf 35}}`. Books: plain.
 - **pages**: single hyphen, `35-55`.

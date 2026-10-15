@@ -3,8 +3,8 @@
 <div class="grid gap-3 sm:grid-cols-3">
   <div><label class="block text-xs font-medium uppercase tracking-wide text-slate-500">Citation key</label>
     <input name="key" value="{{ key }}" class="{{ input }} font-mono"></div>
-  <div class="sm:col-span-2"><label class="{{ label }}">New filename</label>
+  <div class="sm:col-span-2"><label class="{{ label }}">Filename</label>
     <input name="filename" value="{{ filename }}" class="{{ input }}"></div>
 </div>
-<div><label class="{{ label }}">BibTeX <span class="normal-case text-slate-400">edit freely; changing fields above regenerates it</span></label>
+<div><label class="{{ label }}">BibTeX</label>
   <textarea name="bibtex" rows="10" class="{{ input }} font-mono text-xs">{{ bibtex }}</textarea></div>

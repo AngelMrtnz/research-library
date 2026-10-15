@@ -109,3 +109,11 @@ def test_inbox_scanned_automatically_and_duplicates_flagged(client):
     assert "scan_0042.pdf" in page and "copy.pdf" in page
     notes = [client.get(f"/staging/{i}").text for i in (1, 2)]
     assert any("Possible duplicate" in n for n in notes)
+
+
+def test_delete_trashes_unconfirmed_pdf(client):
+    client.post("/scan")
+    r = client.post("/staging/1/delete", follow_redirects=False)
+    assert r.status_code == 303
+    assert not (client.inbox / "scan_0042.pdf").exists()
+    assert "scan_0042.pdf" not in client.get("/staging").text

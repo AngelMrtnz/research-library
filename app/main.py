@@ -16,6 +16,7 @@ from .auth import router as auth_router
 from .bibtex import ENTRY_TYPES, Entry, render
 from .config import get_settings
 from .extract import render_preview
+from .latex import to_unicode
 from .names import Author, build_filename, citation_key, parse_author, unique_key
 from .services import Library
 from .storage import make_storage
@@ -33,6 +34,7 @@ setup_oauth()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.globals["auth_on"] = not settings.auth_disabled
 templates.env.filters["qs"] = lambda d: urlencode(d, doseq=True)
+templates.env.filters["tex"] = to_unicode
 templates.env.filters["names"] = lambda authors: ", ".join(
     Author(**a).display for a in authors or [])
 
@@ -272,7 +274,7 @@ def rerun(paper_id: int, lib: Library = Depends(get_library)):
     return RedirectResponse(f"/staging/{paper_id}", status_code=303)
 
 
-@app.post("/staging/{paper_id}/skip")
-def skip(paper_id: int, lib: Library = Depends(get_library)):
-    lib.skip(paper_id)
+@app.post("/staging/{paper_id}/delete")
+def delete(paper_id: int, lib: Library = Depends(get_library)):
+    lib.delete(paper_id)
     return RedirectResponse("/staging", status_code=303)

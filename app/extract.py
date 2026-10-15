@@ -21,7 +21,10 @@ class Extraction(BaseModel):
                             "techreport or misc")
     title: str = Field(description="The paper's own title only: no journal name, volume, "
                        "'Original Article', DOI or trailing period. Keep its capitalization; "
-                       "convert ALL CAPS titles to normal case.")
+                       "convert ALL CAPS titles to normal case. Write accented letters as "
+                       "normal Unicode characters (León), and math or symbols in LaTeX "
+                       "between $...$ exactly as printed, e.g. $\\mathbb{R}^n$, "
+                       "$\\mathfrak{g}$, $\\alpha$-Lie; never flatten them to plain ASCII.")
     authors: list[Author] = Field(description="All authors in the order printed. given = "
                                   "given names as printed, particle = lowercase surname "
                                   "particle such as 'de', 'van der', family = surname. "

@@ -31,7 +31,7 @@
         <textarea name="title" rows="2" class="meta {{ input }}">{{ e.title }}</textarea>
       </div>
       <div>
-        <label class="{{ label }}">Authors <span class="normal-case text-slate-400">one per line, as printed: “de León, Manuel”</span></label>
+        <label class="{{ label }}">Authors</label>
         <textarea name="authors" rows="{{ [authors.count('\n') + 2, 3] | max }}" class="meta {{ input }} font-mono">{{ authors }}</textarea>
         <p class="mt-1 text-xs text-slate-500">{{ e.authors | names }}</p>
       </div>
@@ -80,7 +80,7 @@
       <button formaction="/staging/{{ paper.id }}/save" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Save draft</button>
       {% if paper.status != 'confirmed' %}
       <button formaction="/staging/{{ paper.id }}/rerun" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Re-run AI</button>
-      <button formaction="/staging/{{ paper.id }}/skip" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Skip</button>
+      <button formaction="/staging/{{ paper.id }}/delete" formnovalidate onclick="return confirm('Delete this PDF? It goes to the trash.')" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Delete</button>
       {% else %}
       <button formaction="/papers/{{ paper.id }}/undo" class="px-3 py-2 text-sm text-slate-500 hover:text-rose-600">Undo rename</button>
       {% endif %}

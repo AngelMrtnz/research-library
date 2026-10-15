@@ -102,6 +102,7 @@ SQLite (+ FTS5) ◄────────────────────�
 - [ ] Crossref/arXiv API lookup to verify Gemini output by DOI
 - [ ] Settings page to edit house rules without code (threshold, particle rule)
 - [ ] Batch "confirm all reviewed" on the staging list
+- [x] Review page tidy-up: Delete (to trash) instead of Skip, shorter labels; LaTeX math kept in titles and BibTeX, ASCII only in filenames
 
 ## Guiding principle
 Minimal, easy and fast to run (Billy). Prefer fewer dependencies, fewer clicks, fewer visible fields.

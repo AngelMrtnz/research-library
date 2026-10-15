@@ -134,8 +134,13 @@ class Library:
         db.set_paper_tags(self.conn, paper_id, tags)
         self.conn.commit()
 
-    def skip(self, paper_id: int) -> None:
-        self.conn.execute("UPDATE papers SET status = 'skipped' WHERE id = ?", (paper_id,))
+    def delete(self, paper_id: int) -> None:
+        """Send an unconfirmed PDF to the trash and forget it."""
+        row = self.get(paper_id)
+        if row["status"] == "confirmed":
+            raise ValueError("Undo the rename before deleting a confirmed paper.")
+        self.storage.trash(row["file_id"])
+        self.conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         self.conn.commit()
 
     # ---- the only writes to storage ---------------------------------------

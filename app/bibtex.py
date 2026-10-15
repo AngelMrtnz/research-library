@@ -6,6 +6,7 @@ import re
 
 from pydantic import BaseModel, Field
 
+from .latex import escape
 from .names import Author
 
 ENTRY_TYPES = ["article", "unpublished", "book", "inproceedings", "incollection",
@@ -62,28 +63,29 @@ def note_value(e: Entry) -> str:
         return rf"\href{{https://doi.org/{e.doi}}}{{{e.doi}}}"
     if e.arxiv:
         return rf"\href{{https://arxiv.org/abs/{e.arxiv}}}{{{e.arxiv}}}"
-    return e.note
+    return escape(e.note)
 
 
 def field_values(e: Entry) -> dict[str, str]:
     values = {
         "author": " and ".join(a.full for a in e.authors),
-        "title": f"{{{e.title}}}",
+        "title": f"{{{escape(e.title)}}}",
         "year": str(e.year) if e.year else "",
-        "journal": e.journal or ("Preprint" if e.entry_type == "unpublished" and e.arxiv else ""),
-        "booktitle": e.booktitle,
+        "journal": escape(e.journal)
+        or ("Preprint" if e.entry_type == "unpublished" and e.arxiv else ""),
+        "booktitle": escape(e.booktitle),
         "volume": e.volume,
         "number": e.number,
         "pages": re.sub(r"\s*(--|–|—|-)\s*", "-", e.pages),
-        "publisher": e.publisher,
-        "address": e.address,
+        "publisher": escape(e.publisher),
+        "address": escape(e.address),
         "edition": e.edition,
         "isbn": e.isbn,
-        "series": e.series,
-        "school": e.school,
-        "institution": e.institution,
+        "series": escape(e.series),
+        "school": escape(e.school),
+        "institution": escape(e.institution),
         "editor": e.editor,
-        "howpublished": e.howpublished,
+        "howpublished": escape(e.howpublished),
         "url": e.url,
         "note": note_value(e),
     }
