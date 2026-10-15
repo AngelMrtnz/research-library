@@ -11,20 +11,20 @@ A private web app that classifies academic PDFs in Google Drive, lets you review
 
 ```bash
 pip install -r requirements.txt
-AUTH_DISABLED=1 STORAGE=local uvicorn app.main:app --reload
+AUTH_DISABLED=1 uvicorn app.main:app --reload
 ```
-Put some PDFs in `data/library/Inbox/`, open http://localhost:8000/staging and click **Scan inbox**.
+Put some PDFs in `data/library/Inbox/` and open http://localhost:8000/staging. New PDFs are picked up automatically.
 
 On Windows PowerShell:
 ```powershell
-$env:AUTH_DISABLED=1; $env:STORAGE="local"; uvicorn app.main:app --reload
+$env:AUTH_DISABLED=1; uvicorn app.main:app --reload
 ```
 
 ## Use it with your Google Drive
 
 **Option A: on your own PC (simplest, the default).** Double-click `start.bat`. The first run creates `config.env` from `config.env.example`; set `LOCAL_LIBRARY_DIR` to your Papers folder inside Google Drive for Desktop and paste your `GEMINI_API_KEY`. Renames happen on disk and Drive syncs them. The app listens on `127.0.0.1` only, so there is no login.
 
-**Option B: hosted (reach it from any device).** Uses the Drive API.
+**Option B: hosted (reach it from any device).** Uses the Drive API and needs the extra packages in `requirements-hosted.txt`.
 1. In [Google Cloud console](https://console.cloud.google.com/): create a project, enable the **Google Drive API**, configure the OAuth consent screen (External, add yourself as a test user), and create an **OAuth client ID** of type *Web application* with redirect URI `https://<your-host>/auth/callback`.
 2. Get a Gemini key at https://aistudio.google.com/apikey.
 3. In Drive, create `Papers/` and `Papers/Inbox/`; copy each folder's ID from its URL.
@@ -41,9 +41,9 @@ Only `OWNER_EMAIL` can sign in. Everything else gets a 403.
 
 ## Day to day
 1. Drop PDFs into `Papers/Inbox` (or use **Upload** on the Review page).
-2. **Review → Scan inbox.** Each paper gets a proposal.
+2. Open **Review**. New PDFs are picked up automatically and read in parallel (a few seconds each with Gemini).
 3. Open one: first page on the left, every field editable on the right. Changing title/authors/year/type regenerates the key, filename and BibTeX live; you can still hand-edit the BibTeX.
-4. **Confirm & Rename** renames the file, moves it from `Inbox/` to `Papers/`, and rewrites `Papers/library.bib`. **Undo rename** puts it back.
+4. **Confirm & Rename** (or Ctrl+Enter) renames the file, moves it from `Inbox/` to `Papers/`, and rewrites `Papers/library.bib`. **Undo rename** puts it back.
 
 ## Development
 ```bash

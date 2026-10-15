@@ -32,6 +32,7 @@ Private web app: PDFs land in a Drive `Inbox/`, Gemini proposes metadata, the ow
 ## Workflow
 1. Tests first for pure logic; Billy's four examples in `tests/test_names_bibtex.py` must render exactly.
 2. `pip install -r requirements-dev.txt`, then `pytest -q` and `ruff check .`.
+   Keep it minimal and fast (Billy's priority): no new dependency for the local version without a strong reason.
 3. Try it: `AUTH_DISABLED=1 STORAGE=local uvicorn app.main:app --reload`, drop PDFs into `data/library/Inbox`, click Scan inbox.
 4. After changing classes in templates rebuild CSS: `npx tailwindcss@3.4.16 -c frontend/tailwind.config.js -i frontend/input.css -o app/static/app.css --minify`.
 5. Update `PLAN.md`.

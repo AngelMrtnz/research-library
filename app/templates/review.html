@@ -22,7 +22,8 @@
     </div>
   </div>
 
-  <form method="post" action="/staging/{{ paper.id }}/confirm" id="review" class="space-y-3">
+  <form method="post" action="/staging/{{ paper.id }}/confirm" id="review" class="space-y-3"
+        onkeydown="if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); this.requestSubmit(); }">
     <input type="hidden" name="next_id" value="{{ next_id or '' }}">
     <div hx-post="/staging/{{ paper.id }}/derive" hx-trigger="change from:.meta, keyup changed delay:500ms from:.meta" hx-include="#review" hx-target="#derived" class="space-y-3">
       <div>
@@ -41,11 +42,22 @@
             {% for t in entry_types %}<option {{ 'selected' if t == e.entry_type }}>{{ t }}</option>{% endfor %}
           </select></div>
       </div>
+      {% set core = [('journal', 'Journal (abbrev.)'), ('volume', 'Volume'), ('pages', 'Pages'), ('doi', 'DOI'), ('arxiv', 'arXiv id')] %}
+      {% set extra = [('booktitle', 'Book / proceedings'), ('number', 'Number'), ('url', 'URL'), ('publisher', 'Publisher'), ('address', 'Address'), ('edition', 'Edition'), ('series', 'Series'), ('isbn', 'ISBN'), ('note', 'Note')] %}
       <div class="grid grid-cols-2 gap-3">
-        {% for f, l in [('journal', 'Journal (abbrev.)'), ('booktitle', 'Book / proceedings'), ('volume', 'Volume'), ('number', 'Number'), ('pages', 'Pages'), ('doi', 'DOI'), ('arxiv', 'arXiv id'), ('url', 'URL'), ('publisher', 'Publisher'), ('address', 'Address'), ('edition', 'Edition'), ('series', 'Series'), ('isbn', 'ISBN'), ('note', 'Note')] %}
-        <div><label class="{{ label }}">{{ l }}</label><input name="{{ f }}" value="{{ e[f] or '' }}" class="meta {{ input }}"></div>
+        {% for f, l in core %}
+        <div class="{{ 'col-span-2' if f == 'journal' }}"><label class="{{ label }}">{{ l }}</label><input name="{{ f }}" value="{{ e[f] or '' }}" class="meta {{ input }}"></div>
         {% endfor %}
       </div>
+      {% set ns = namespace(any=false) %}{% for f, l in extra %}{% if e[f] %}{% set ns.any = true %}{% endif %}{% endfor %}
+      <details {{ 'open' if ns.any }}>
+        <summary class="cursor-pointer text-xs text-slate-500">More fields (book, publisher, ISBN, note…)</summary>
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          {% for f, l in extra %}
+          <div><label class="{{ label }}">{{ l }}</label><input name="{{ f }}" value="{{ e[f] or '' }}" class="meta {{ input }}"></div>
+          {% endfor %}
+        </div>
+      </details>
     </div>
 
     <div>
@@ -64,7 +76,7 @@
     </div>
 
     <div class="flex flex-wrap items-center gap-2 pt-2">
-      <button class="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-500">Confirm &amp; Rename</button>
+      <button class="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-500" title="Ctrl+Enter">Confirm &amp; Rename <span class="ml-1 text-xs opacity-70">Ctrl+Enter</span></button>
       <button formaction="/staging/{{ paper.id }}/save" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Save draft</button>
       {% if paper.status != 'confirmed' %}
       <button formaction="/staging/{{ paper.id }}/rerun" class="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Re-run AI</button>

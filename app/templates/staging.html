@@ -4,10 +4,10 @@
 <div class="flex flex-col gap-4 sm:flex-row sm:items-end">
   <div>
     <h1 class="text-xl font-semibold">Staging / Review</h1>
-    <p class="text-sm text-slate-500">Nothing is renamed until you open a paper and click <b>Confirm &amp; Rename</b>.</p>
+    <p class="text-sm text-slate-500">New PDFs in the Inbox appear here automatically. Nothing is renamed until you click <b>Confirm &amp; Rename</b>.</p>
   </div>
   <form method="post" action="/scan" class="sm:ml-auto">
-    <button class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900">Scan inbox</button>
+    <button class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900">Rescan inbox</button>
   </form>
   <form method="post" action="/upload" enctype="multipart/form-data" class="flex items-center gap-2">
     <input type="file" name="files" accept="application/pdf" multiple required class="text-sm">

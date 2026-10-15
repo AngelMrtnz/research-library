@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import db
 from .bibtex import Entry, render, render_library
 from .config import Settings
-from .extract import extract
-from .names import build_filename, citation_key, dedupe_filename, unique_key
+from .extract import Extraction, extract
+from .names import ascii_fold, build_filename, citation_key, dedupe_filename, unique_key
 from .storage import Storage
 
 log = logging.getLogger(__name__)
@@ -62,25 +64,38 @@ class Library:
         f = self.storage.save_upload(name, data)
         self.register(f.id, f.name)
 
-    def process_pending(self) -> int:
+    def process_pending(self, workers: int = 4) -> int:
+        """Extract several papers at once; results are stored one by one as they land."""
         rows = self.conn.execute("SELECT id FROM papers WHERE status = 'pending'").fetchall()
-        for row in rows:
-            self.propose(row["id"])
+        tags = [t["name"] for t in db.all_tags(self.conn)]
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(self._extract, self.get(r["id"]), tags): r["id"]
+                       for r in rows}
+            for fut in as_completed(futures):
+                self._store(futures[fut], fut.result())
         return len(rows)
 
     def propose(self, paper_id: int) -> None:
         """Run extraction and stage the proposal. Never touches the file."""
-        row = self.get(paper_id)
         tags = [t["name"] for t in db.all_tags(self.conn)]
+        self._store(paper_id, self._extract(self.get(paper_id), tags))
+
+    def _extract(self, row: sqlite3.Row, tags: list[str]) -> Extraction | Exception:
         try:
-            x = extract(self.pdf_bytes(row["file_id"]), tags,
-                        self.settings.gemini_api_key, self.settings.gemini_model)
+            return extract(self.pdf_bytes(row["file_id"]), tags,
+                           self.settings.gemini_api_key, self.settings.gemini_model)
         except Exception as exc:  # noqa: BLE001 - shown to the user on the staging page
             log.exception("extraction failed for %s", row["original_filename"])
+            return exc
+
+    def _store(self, paper_id: int, x: Extraction | Exception) -> None:
+        if isinstance(x, Exception):
             self.conn.execute("UPDATE papers SET status = 'error', error = ? WHERE id = ?",
-                              (str(exc)[:500], paper_id))
+                              (str(x)[:500], paper_id))
             self.conn.commit()
             return
+        if dup := self.find_duplicate(paper_id, x.title, x.doi):
+            x.notes = (f"Possible duplicate of {dup}. " + x.notes).strip()
         fields = x.model_dump(exclude={"tags", "new_tags", "notes"})
         entry = Entry(key=unique_key(citation_key(x.authors, x.year),
                                      self.taken_keys(exclude=paper_id)), **fields)
@@ -94,6 +109,19 @@ class Library:
         )
         db.set_paper_tags(self.conn, paper_id, x.tags + x.new_tags[:2])
         self.conn.commit()
+
+    def find_duplicate(self, paper_id: int, title: str, doi: str) -> str | None:
+        def norm(t: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", ascii_fold(t).lower())
+
+        rows = self.conn.execute(
+            "SELECT id, filename, entry_json FROM papers WHERE id != ? AND entry_json IS NOT NULL "
+            "AND status IN ('staged', 'confirmed')", (paper_id,)).fetchall()
+        for r in rows:
+            e = json.loads(r["entry_json"])
+            if (doi and e.get("doi") == doi) or (title and norm(e["title"]) == norm(title)):
+                return r["filename"]
+        return None
 
     def save_draft(self, paper_id: int, entry: Entry, filename: str, bibtex: str,
                    tags: list[str]) -> None:

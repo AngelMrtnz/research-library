@@ -88,19 +88,23 @@ SQLite (+ FTS5) ◄────────────────────�
 - [x] Confirm & Rename (moves Inbox → library), undo, master `library.bib`
 - [x] Search, tag filter (AND), add/remove tags inline, tag colors page, filtered `.bib` export
 - [x] Google sign-in restricted to `OWNER_EMAIL`; sign-in also grants Drive access
-- [x] Dockerfile, `.env.example`, README; 15 tests passing
+- [x] Dockerfile, `.env.example`, README
+- [x] Local-first on Billy's PC: `start.bat`, `config.env`, `G:/Mi unidad/Papers` (+ `Inbox`)
+- [x] Minimal & fast (Billy's priority): 7 packages for the local version, ~0.6 s startup, setup skipped on later launches, inbox auto-scanned, 4 papers extracted in parallel, 1 page sent to Gemini, rare fields folded away, Ctrl+Enter to confirm
+- [x] ASCII-only filenames; duplicate warning (same DOI or title); Gemini model fallback list
+- [x] Pushed to github.com/AngelMrtnz/research-library; 17 tests passing
 
 ### Next
-- [ ] Push to GitHub (waiting on GitHub connection)
-- [ ] Billy: create Google Cloud OAuth client + Gemini key, pick the Drive folder (README "Use it with your Google Drive")
+- [ ] Billy: first run of `start.bat` on the PC; rotate the Gemini key at some point
 - [ ] First real run on ~10 papers; tune the Gemini prompt against real PDFs
-- [ ] Choose hosting: local PC (`STORAGE=local`) vs Cloud Run
 - [ ] Bulk import of the existing library (papers already named, outside Inbox)
 - [ ] Rebuild DB from `library.bib` (`python -m app.rebuild`) for backups / new machines
 - [ ] Crossref/arXiv API lookup to verify Gemini output by DOI
-- [ ] Duplicate detection (DOI / title similarity)
 - [ ] Settings page to edit house rules without code (threshold, particle rule)
 - [ ] Batch "confirm all reviewed" on the staging list
+
+## Guiding principle
+Minimal, easy and fast to run (Billy). Prefer fewer dependencies, fewer clicks, fewer visible fields.
 
 ## Open decisions
 
@@ -108,7 +112,7 @@ SQLite (+ FTS5) ◄────────────────────�
 |---|---|---|---|
 | 1 | Login method | **Google** OAuth / Password | Google |
 | 2 | Metadata store | **SQLite** (FTS5) / JSON | SQLite |
-| 3 | Hosting | **Cloud Run** / Local PC / VPS | Cloud Run |
+| 3 | Hosting | Local PC | ✅ Billy |
 | 4 | Filename format | `Year_Authors_Title` | ✅ Billy |
 | 5 | Multiple authors in filename | All surnames in printed order; 3-letter surnames when too many | ✅ Billy, printed order (threshold open, see 11) |
 | 6 | Citation key | Surname initials, printed order, `_YYYY` (`PV_2000`, `Arn_1989`) | ✅ Billy (particle open, see 12) |

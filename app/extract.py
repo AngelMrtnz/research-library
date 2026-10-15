@@ -60,7 +60,7 @@ Text layer of the first page, for reference:
 ---"""
 
 
-def first_pages(pdf: bytes, n: int = 2) -> bytes:
+def first_pages(pdf: bytes, n: int = 1) -> bytes:
     with pymupdf.open(stream=pdf, filetype="pdf") as doc:
         out = pymupdf.open()
         out.insert_pdf(doc, from_page=0, to_page=min(n, doc.page_count) - 1)

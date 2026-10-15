@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 
-from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
@@ -16,7 +15,7 @@ from .config import get_settings
 from .storage import DRIVE_SCOPES
 
 router = APIRouter()
-oauth = OAuth()
+oauth = None  # authlib is only installed for the hosted version
 
 
 class LoginRequired(Exception):
@@ -24,8 +23,12 @@ class LoginRequired(Exception):
 
 
 def setup_oauth() -> None:
+    global oauth
     s = get_settings()
-    if s.google_client_id:
+    if s.google_client_id and not s.auth_disabled:
+        from authlib.integrations.starlette_client import OAuth
+
+        oauth = OAuth()
         oauth.register(
             "google",
             client_id=s.google_client_id,
@@ -39,7 +42,7 @@ def require_owner(request: Request) -> str:
     s = get_settings()
     if s.auth_disabled:
         return "dev"
-    email = request.session.get("email")
+    email = request.scope.get("session", {}).get("email")
     if not email or email.lower() != s.owner_email.lower():
         raise LoginRequired()
     return email

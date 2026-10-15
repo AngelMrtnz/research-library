@@ -100,3 +100,12 @@ def test_login_required_when_auth_enabled(client, monkeypatch):
     r = client.get("/", follow_redirects=False)
     assert r.status_code in (302, 307) and r.headers["location"].endswith("/login")
     os.environ.pop("AUTH_DISABLED", None)
+
+
+def test_inbox_scanned_automatically_and_duplicates_flagged(client):
+    import shutil
+    shutil.copy(client.inbox / "scan_0042.pdf", client.inbox / "copy.pdf")
+    page = client.get("/staging").text  # opening the page scans the inbox
+    assert "scan_0042.pdf" in page and "copy.pdf" in page
+    notes = [client.get(f"/staging/{i}").text for i in (1, 2)]
+    assert any("Possible duplicate" in n for n in notes)

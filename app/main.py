@@ -9,7 +9,6 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, UploadFil
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
 from .auth import LoginRequired, require_owner, setup_oauth
@@ -23,13 +22,16 @@ from .storage import make_storage
 
 settings = get_settings()
 app = FastAPI(title="Research Library", docs_url=None, redoc_url=None)
-app.add_middleware(SessionMiddleware, secret_key=settings.session_secret,
-                   https_only=not settings.auth_disabled, same_site="lax",
-                   max_age=60 * 60 * 24 * 30)
-app.include_router(auth_router)
+if not settings.auth_disabled:
+    from starlette.middleware.sessions import SessionMiddleware
+
+    app.add_middleware(SessionMiddleware, secret_key=settings.session_secret,
+                       https_only=True, same_site="lax", max_age=60 * 60 * 24 * 30)
+    app.include_router(auth_router)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 setup_oauth()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+templates.env.globals["auth_on"] = not settings.auth_disabled
 templates.env.filters["qs"] = lambda d: urlencode(d, doseq=True)
 templates.env.filters["names"] = lambda authors: ", ".join(
     Author(**a).display for a in authors or [])
@@ -164,7 +166,10 @@ async def update_tag(request: Request, tag_id: int, _: Library = Depends(get_lib
 
 # ---- staging ---------------------------------------------------------------
 @app.get("/staging", response_class=HTMLResponse)
-def staging_page(request: Request, msg: str = "", lib: Library = Depends(get_library)):
+def staging_page(request: Request, bg: BackgroundTasks, msg: str = "",
+                 lib: Library = Depends(get_library)):
+    if not request.headers.get("HX-Request") and lib.scan():
+        bg.add_task(process_in_background, lib)
     rows = _conn.execute(
         "SELECT * FROM papers WHERE status IN ('pending','staged','error') ORDER BY id"
     ).fetchall()

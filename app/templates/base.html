@@ -15,7 +15,7 @@
       <a href="/staging" class="hover:text-blue-600">Review{% if staged %} <span class="rounded-full bg-amber-100 px-2 text-amber-800">{{ staged }}</span>{% endif %}</a>
       <a href="/tags" class="hover:text-blue-600">Tags</a>
       <a href="/library.bib" class="hover:text-blue-600">library.bib</a>
-      <a href="/logout" class="ml-auto text-slate-500 hover:text-slate-800 dark:hover:text-white">Sign out</a>
+      {% if auth_on %}<a href="/logout" class="ml-auto text-slate-500 hover:text-slate-800 dark:hover:text-white">Sign out</a>{% endif %}
     </nav>
   </header>
   <main class="mx-auto max-w-6xl px-4 py-6">
